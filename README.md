@@ -1,4 +1,4 @@
-# mloader
+# loaderx
 Minimal data loader for Flax
 
 ## Rationale for Creating mloader

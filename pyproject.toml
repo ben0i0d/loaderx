@@ -25,7 +25,7 @@ dependencies = []
 version = {attr = "loaderx.__version__"}
 
 [project.urls]
-"Homepage" = "https://github.com/eoeair/mloader"
-"Documentation" = "https://github.com/eoeair/mloader"
-"Source" = "https://github.com/eoeair/mloader"
-"Bug Tracker" = "https://github.com/eoeair/mloader/issues"
+"Homepage" = "https://github.com/eoeair/loaderx"
+"Documentation" = "https://github.com/eoeair/loaderx"
+"Source" = "https://github.com/eoeair/loaderx"
+"Bug Tracker" = "https://github.com/eoeair/loaderx/issues"
