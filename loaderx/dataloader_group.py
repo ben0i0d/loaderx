@@ -3,16 +3,22 @@ import threading
 from queue import Queue
 from concurrent.futures import ThreadPoolExecutor
 
-class DataLoader:
-    def __init__(self, dataset, batch_size=256, shuffle=True, prefetch=2, num_epoch=1, seed=None):
+"""
+group_size [4,32]
+"""
+class DataLoader_Group:
+    def __init__(self, dataset, group_size=16, batch_size=256, shuffle=True, prefetch=2, num_epochs=1, seed=None):
         self.dataset = dataset
+        self.group_size = group_size
         self.batch_size = batch_size
         self.shuffle = shuffle
-        self.prefetch = prefetch
-        self.num_epoch = num_epoch
+        self.num_epochs = num_epochs
         self.seed = seed
 
-        self.indices = list(range(len(dataset)))
+        self.batch_groups = self.batch_size // self.group_size
+        self.num_groups = len(dataset)
+        
+        self.indices = list(range(self.num_groups))
         self.queue = Queue(maxsize=prefetch)
         
         self.stop_signal = threading.Event()
@@ -21,17 +27,17 @@ class DataLoader:
         self.thread.start()
 
     def _prefetch_data(self):
-        while not self.stop_signal.is_set() and self.current_epoch < self.num_epoch:
+        while not self.stop_signal.is_set() and self.current_epoch < self.num_epochs:
             if self.shuffle:
                 if self.seed is not None:
                     np.random.seed(self.seed + self.current_epoch)
                 np.random.shuffle(self.indices)
-            for i in range(0, len(self.indices), self.batch_size):
-                batch_indices = self.indices[i:i + self.batch_size]         
+            for i in range(0, self.num_groups, self.batch_groups):
+                indices = self.indices[i:i + self.batch_groups]
                 with ThreadPoolExecutor() as executor:
-                    batch = executor.map(self.dataset.__getitem__, batch_indices)
-                batch_data, batch_labels = zip(*batch)
-                self.queue.put({'data': np.stack(batch_data), 'label': np.stack(batch_labels)})
+                    batch = list(executor.map(self.dataset.__getgroup__, indices))
+                data, label = zip(*batch)
+                self.queue.put({'data': np.concatenate(data, axis=0), 'label': np.concatenate(label, axis=0)})
             self.current_epoch += 1
         self.stop_signal.set()
 
