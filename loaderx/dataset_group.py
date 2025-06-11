@@ -11,7 +11,7 @@ class Dataset_Group:
 
     def __getgroup__(self, idx):
         # 获取指定组的数据和标签，最后一组可能不足 group_size
-        if idx >= self.total_groups:
+        if idx >= self.num_groups:
             raise IndexError("Group index out of range.")
         start = idx * self.group_size
         end = min((idx + 1) * self.group_size, self.length)

@@ -7,18 +7,21 @@ from concurrent.futures import ThreadPoolExecutor
 group_size [4,32]
 """
 class DataLoader_Group:
-    def __init__(self, dataset, group_size=16, batch_size=256, shuffle=True, prefetch=2, num_epochs=1, seed=None):
+    def __init__(self, dataset, batch_size=256, group_size=16, num_epochs=1, prefetch=2, shuffle=True, seed=None, num_workers=8, backend="threading"):
         self.dataset = dataset
-        self.group_size = group_size
         self.batch_size = batch_size
+        self.group_size = group_size
+        self.batch_groups = batch_size // group_size
+        self.num_groups = len(dataset)
+
         self.shuffle = shuffle
-        self.num_epochs = num_epochs
         self.seed = seed
 
-        self.batch_groups = self.batch_size // self.group_size
-        self.num_groups = len(dataset)
-        
+        self.num_workers = num_workers
+        self.backend = backend
+
         self.indices = list(range(self.num_groups))
+        self.num_epochs = num_epochs
         self.queue = Queue(maxsize=prefetch)
         
         self.stop_signal = threading.Event()
@@ -48,6 +51,9 @@ class DataLoader_Group:
         if self.stop_signal.is_set() and self.queue.empty():
             raise StopIteration
         return self.queue.get()
+
+    def __len__(self):
+        return np.ceil(self.num_groups / self.batch_groups).astype(int) * self.num_epochs
 
     def __del__(self):
         try:
