@@ -43,7 +43,7 @@ def pred_step(model: CNN, batch):
   logits = model(batch['data'])
   return logits.argmax(axis=1)
 
-train_loader = loader(npz_path='data/mnist.npz', num_epoch=10)
+train_loader = DataLoader(dataset = Dataset(dataset_path, data, label),batch_size=256,num_epochs=10)
 for step, batch in enumerate(train_loader):
     train_step(model, optimizer, metrics, batch)
     if step > 0 and step % 500 == 0:
@@ -52,7 +52,7 @@ for step, batch in enumerate(train_loader):
         metrics.reset()  # Reset the metrics for the train set.
 
         # Compute the metrics on the test set after each training epoch.
-        val_loader = loader(npz_path='data/mnist.npz', num_epoch=1)
+        val_loader = DataLoader(dataset = Dataset(dataset_path, data, label),batch_size=256)
         for val_batch in val_loader:
             eval_step(model, metrics, val_batch)
         val_metrics = metrics.compute()
