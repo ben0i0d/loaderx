@@ -31,7 +31,8 @@ class Dataset:
 
     def __len__(self):
         """
+        Return the number of samples in the dataset.
         Returns:
-            int: Total number of samples in the dataset.
+            int: The number of samples in the dataset.
         """
         return len(self._data)
