@@ -1,52 +1,37 @@
 import numpy as np
 
 class Dataset:
-    def __init__(self, dataset_path, data, label, group_size=1):
+    def __init__(self, data_path, label_path, mmap=True):
         """
         Initialize dataset, override in subclass if needed.
         Args:
-            dataset_path (str): Path to the dataset file.
-            data (str): Key for the data array in the dataset file.
-            label (str): Key for the label array in the dataset file.
-            group_size (int): Number of samples to group together. Default is 1.(per-sample sampling)
+            data_path (str): Path to the dataset file.
+            label_path (str): Path to the dataset file.
+            mmap (bool, optional): Whether to use mmap. Defaults to True.
         """
-        self._data = np.load(dataset_path)[data]
-        self._label = np.load(dataset_path)[label]
-        
-        self.group_size = group_size
-        self.num_groups = -(-len(self._data) // self.group_size)
-        
-        if len(self._data) % self.group_size != 0:
-          self.__pad__()
+        mode = 'r' if mmap else None
 
-    def __pad__(self):
-        """
-        Pad the dataset to ensure it has a multiple of group_size samples.
-        """
-        pad_len = self.group_size * self.num_groups - len(self._data)
-        if pad_len > 0:
-            indices = np.random.choice(len(self._data), pad_len, replace=True)
-            self._data = np.concatenate([self._data, self._data[indices]], axis=0)
-            self._label = np.concatenate([self._label, self._label[indices]], axis=0)
+        self._data = np.load(data_path, mmap_mode=mode)
+        self._label = np.load(label_path, mmap_mode=mode)
 
-    def __getitem__(self, idxs):
+        if self._data.shape[0] != self._label.shape[0]:
+            raise ValueError('data and label must have the same number of samples.')
+
+    def __getitem__(self, idx):
         """
-        Retrieve a list of grouped data samples by their start indices.
+        Get a sample from the dataset by its index.
 
         Args:
-            idxs (List[int]): List of starting indices for groups.
+            idx (int): Index of the sample to retrieve.
 
         Returns:
-            Tuple[np.ndarray, np.ndarray]:
-                Two ndarray, each containing group_size-sized chunks of data and labels
-                corresponding to each start index in idxs.
+            dict: A dictionary containing the sample data and label.
         """
-        return  np.concatenate([self._data[idx:idx+self.group_size] for idx in idxs], axis=0), \
-                np.concatenate([self._label[idx:idx+self.group_size] for idx in idxs], axis=0)
+        return self._data[idx], self._label[idx]
 
     def __len__(self):
         """
         Returns:
-            int: Total number of samples in the dataset (including any padding).
+            int: Total number of samples in the dataset.
         """
         return len(self._data)

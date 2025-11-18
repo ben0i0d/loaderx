@@ -3,79 +3,91 @@ import threading
 from queue import Queue
 
 class DataLoader:
-    def __init__(self, dataset, batch_size=256, num_epochs=1, prefetch=4, shuffle=True, seed=None, transform=None, monitor=False):
+    def __init__(self, dataset, strides,batch_size=256, prefetch_size=8, shuffle=True, seed=42, transform=(lambda x: x)):
         """
         Args:
-            dataset (Dataset): The dataset to load data from.
-            batch_size (int): Number of samples per batch.
-            num_epochs (int): Number of epochs to iterate over the dataset.
-            prefetch (int): Number of batches to prefetch in the background.
-            shuffle (bool): Whether to shuffle the dataset at the beginning of each epoch.
-            seed (int, optional): Random seed for shuffling.
-            transform (callable, optional): A function to apply transformations to the batch.
-                batch = (data, label)
-                transform should return a tuple of (data, label) after transformation
-                Example:
-                def transform(batch):
-                    return batch[0][..., None] / 255.0 , batch[1].astype(numpy.int32)
-            monitor (bool): If True, will print queue size to monitor any I/O bottlenecks.
-        
+            dataset (Dataset): dataset to load samples from.
+            batch_size (int, optional): batch size. Defaults to 256.
+            prefetch (int, optional): number of batches to prefetch. Defaults to 8.
+            shuffle (bool, optional): whether to shuffle samples. Defaults to True.
+            seed (int, optional): random seed. Defaults to None.
+            transform (callable, optional): data transformation function. Defaults to lambda x: x.
         """
         self.dataset = dataset
-        self.batch_size = batch_size
-        
-        self.batch_groups = batch_size // self.dataset.group_size
-        self.num_groups = self.dataset.num_groups
-
-        self.shuffle = shuffle
+        self.strides = strides
         self.seed = seed
+        self.rng = np.random.default_rng(seed)
 
-        self.transform = transform or (lambda x: x)
-        self.monitor = monitor
+        self.step = 0
 
-        self.indices = list(range(self.num_groups))
-        self.num_epochs = num_epochs
-        self.queue = Queue(maxsize=prefetch)
+        self.indices = Queue(maxsize=prefetch_size)
+        self.batches = Queue(maxsize=prefetch_size)
         
         self.stop_signal = threading.Event()
-        self.current_epoch = 0
-        self.thread = threading.Thread(target=self._prefetch_data)
-        self.thread.start()
+        self.lock = threading.Lock()
 
-    def _prefetch_data(self):
-        while not self.stop_signal.is_set() and self.current_epoch < self.num_epochs:
-            if self.shuffle:
-                if self.seed is not None:
-                    np.random.seed(self.seed + self.current_epoch)
-                np.random.shuffle(self.indices)
-            for i in range(0, self.num_groups, self.batch_groups):
-                indices = self.indices[i:i + self.batch_groups]
-                data, label = self.transform(self.dataset[indices])
-                self.queue.put({'data': data, 'label': label})
-            self.current_epoch += 1
-        self.stop_signal.set()
+        self.threads = [
+            threading.Thread(target=self._sampler, args=(batch_size, shuffle, )),
+            threading.Thread(target=self._prefetch_data, args=(transform, ))
+        ]
+
+        for thread in self.threads:
+            thread.daemon = True
+            thread.start()
+
+    def _sampler(self, batch_size, shuffle):
+        pos = 0
+        n = len(self.dataset)
+        base = np.arange(batch_size)
+        
+        while not self.stop_signal.is_set():
+            if shuffle:
+                with self.lock:
+                    rng = self.rng
+                self.indices.put(rng.choice(n, batch_size, replace=False))
+            else:
+                batch_idx = (base + pos) % n
+                pos = (pos + batch_size) % n
+                self.indices.put(batch_idx)
+
+    def _prefetch_data(self, transform):
+        while not self.stop_signal.is_set():
+            idxs = self.indices.get()
+            data, label = transform(self.dataset[idxs])
+            self.batches.put(self.batches.put({'data': data, 'label': label}))
+
+    def __next__(self):
+        self.step += 1
+        if self.step % self.strides == 0:
+            self.seed += 1
+            with self.lock:
+                self.rng = np.random.default_rng(self.seed)
+        return self.batches.get()
+    
+    def __len__(self):
+        raise TypeError("Eternal loader has no length.")
 
     def __iter__(self):
         return self
 
-    def __next__(self):
-        if self.stop_signal.is_set() and self.queue.empty():
-            raise StopIteration
-        
-        if self.monitor:
-            self._monitor_counter = getattr(self, '_monitor_counter', 0) + 1
-            if self._monitor_counter % 100 == 0 and self.queue.qsize() < self.queue.maxsize:
-                print(f"[WARN] Queue not full ({self.queue.qsize()}/{self.queue.maxsize}) — potential I/O bottleneck detected.")
+    def __enter__(self):
+        return self
 
-        return self.queue.get()
-    
-    def __len__(self):
-        return -(-len(self.dataset) // self.batch_size) * self.num_epochs
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        self.close()
+
+    def close(self):
+        self.stop_signal.set()
+        
+        for queue in [self.indices, self.batches]:
+            while not queue.empty():
+                try:
+                    queue.get_nowait()
+                except:
+                    break
+        
+        for thread in self.threads:
+            thread.join()
 
     def __del__(self):
-        try:
-            self.stop_signal.set()
-            if hasattr(self, 'thread') and self.thread is not None and self.thread.is_alive():
-                self.thread.join()
-        except Exception:
-            pass
+        self.close()
