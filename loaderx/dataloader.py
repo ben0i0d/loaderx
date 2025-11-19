@@ -3,7 +3,7 @@ import threading
 from queue import Queue
 
 class DataLoader:
-    def __init__(self, dataset, strides,batch_size=256, prefetch_size=8, shuffle=True, seed=42, transform=(lambda x: x)):
+    def __init__(self, dataset, batch_size=256, prefetch_size=8, shuffle=True, seed=42, transform=(lambda x: x)):
         """
         Initialize DataLoader.
 
@@ -18,8 +18,6 @@ class DataLoader:
 
         """
         self.dataset = dataset
-        self.strides = strides
-        self.seed = seed
         self.rng = np.random.default_rng(seed)
 
         self.step = 0
@@ -28,7 +26,6 @@ class DataLoader:
         self.batches = Queue(maxsize=prefetch_size)
         
         self.stop_signal = threading.Event()
-        self.lock = threading.Lock()
 
         self.threads = [
             threading.Thread(target=self._sampler, args=(batch_size, shuffle, )),
@@ -57,9 +54,7 @@ class DataLoader:
         
         while not self.stop_signal.is_set():
             if shuffle:
-                with self.lock:
-                    rng = self.rng
-                self.indices.put(rng.choice(n, batch_size, replace=False))
+                self.indices.put(self.rng.choice(n, batch_size, replace=False))
             else:
                 batch_idx = (base + pos) % n
                 pos = (pos + batch_size) % n
@@ -89,10 +84,6 @@ class DataLoader:
             dict: A dictionary containing the batch data and label.
         """
         self.step += 1
-        if self.step % self.strides == 0:
-            self.seed += 1
-            with self.lock:
-                self.rng = np.random.default_rng(self.seed)
         return self.batches.get()
     
     def __len__(self):
