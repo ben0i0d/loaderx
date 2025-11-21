@@ -15,12 +15,53 @@ loaderx is built around several core principles:
 
 1. A pragmatic approach that prioritizes minimal memory overhead and minimal dependencies.
 2. A strong focus on single-machine training workflows.
-3. A NumPy-based implementation for excellent compatibility with JAX.
+3. We implement based on NumPy semantics, supporting both NumPy (for small to medium datasets) and ArrayRecord (for large-scale datasets) backends. Please note that when using ArrayRecord for writing, the group_size must be set to 1.
 4. An **immortal (endless) step-based data loader**, rather than the traditional epoch-based design—better aligned with modern ML training practices.
 
 ## Current Limitations
-
 Currently, loaderx only supports single-host environments and does not yet support multi-host training.
+
+## Array_record write & read
+*A quick start guide for those who are not yet familiar with ArrayRecord.*
+
+```
+import numpy as np
+from array_record.python.array_record_module import ArrayRecordWriter
+from array_record.python.array_record_data_source import ArrayRecordDataSource
+
+train_data = np.load('train_data.npy',mmap_mode='r')
+dtype = train_data.dtype
+shape =  train_data[0].shape
+
+writer = ArrayRecordWriter("train_data.ar", options="group_size:1,zstd")
+
+for i in range(train_data.shape[0]):
+    writer.write(train_data[i].tobytes())
+
+ds = ArrayRecordDataSource("train_data.ar")
+
+np.frombuffer(ds[0], dtype=dtype).reshape(shape)
+
+writer.close()
+ds.close()
+```
+
+# Quick Start
+```
+import numpy as np
+from loaderx import NPDataset, ARDataset, DataLoader
+
+dataset = ARDataset('xsub/train_data.ar', dtype=np.float32, shape=(3, 300, 25, 2))
+labelset = NPDataset('xsub/train_label.npy')
+
+writer = ArrayRecordWriter("train_data.ar", options="group_size:1,zstd")
+
+loader = DataLoader(dataset, labelset)
+
+for i, batch in enumerate(loader):
+    if i >= 256:
+        break
+```
 
 ## Integrating with Flax
 

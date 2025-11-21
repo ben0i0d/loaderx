@@ -3,21 +3,27 @@ import threading
 from queue import Queue
 
 class DataLoader:
-    def __init__(self, dataset, batch_size=256, prefetch_size=8, shuffle=True, seed=42, transform=(lambda x: x)):
+    def __init__(self, dataset, labelset, batch_size=256, prefetch_size=8, shuffle=True, seed=42, transform=(lambda x,y: (x, y))):
         """
-        Initialize DataLoader.
+        Initialize a data loader.
 
         Args:
-            dataset (Dataset): The dataset to load.
-            strides (int): The number of samples to load at a time.
-            batch_size (int, optional): The batch size. Defaults to 256.
+            dataset (BaseDataset): The dataset to load from.
+            labelset (BaseDataset): The labelset to load from.
+            batch_size (int, optional): The batch size to use. Defaults to 256.
             prefetch_size (int, optional): The number of batches to prefetch. Defaults to 8.
             shuffle (bool, optional): Whether to shuffle the samples. Defaults to True.
-            seed (int, optional): The random seed. Defaults to 42.
-            transform (callable, optional): A data transformation function. Defaults to (lambda x: x).
+            seed (int, optional): The seed to use for shuffling. Defaults to 42.
+            transform (callable, optional): A callable to transform the data and label. Defaults to (lambda x, y: (x, y)).
 
+        Raises:
+            ValueError: If the dataset and labelset do not have the same length.
         """
         self.dataset = dataset
+        self.labelset = labelset
+        if len(dataset) != len(labelset):
+            raise ValueError("dataset and labelset must have the same length")
+
         self.rng = np.random.default_rng(seed)
 
         self.step = 0
@@ -73,7 +79,7 @@ class DataLoader:
         """
         while not self.stop_signal.is_set():
             idxs = self.indices.get()
-            data, label = transform(self.dataset[idxs])
+            data, label = transform(self.dataset.__getitems__(idxs), self.labelset.__getitems__(idxs))
             self.batches.put({'data': data, 'label': label})
 
     def __next__(self):
@@ -89,9 +95,6 @@ class DataLoader:
     def __len__(self):
         """
         Raises a TypeError since an external loader has no length.
-
-        Returns:
-            None
         """
         raise TypeError("Eternal loader has no length.")
 
@@ -138,6 +141,9 @@ class DataLoader:
         
         for thread in self.threads:
             thread.join()
+        
+        self.dataset.close()
+        self.labelset.close()
 
     def __del__(self):
         """
