@@ -41,9 +41,6 @@ for i in range(train_data.shape[0]):
 ds = ArrayRecordDataSource("train_data.ar")
 
 np.frombuffer(ds[0], dtype=dtype).reshape(shape)
-
-writer.close()
-ds.close()
 ```
 
 # Quick Start
@@ -53,8 +50,6 @@ from loaderx import NPDataset, ARDataset, DataLoader
 
 dataset = ARDataset('xsub/train_data.ar', dtype=np.float32, shape=(3, 300, 25, 2))
 labelset = NPDataset('xsub/train_label.npy')
-
-writer = ArrayRecordWriter("train_data.ar", options="group_size:1,zstd")
 
 loader = DataLoader(dataset, labelset)
 
