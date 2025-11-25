@@ -1,9 +1,9 @@
-import numpy as np
 import threading
+import numpy as np
 from queue import Queue
 
 class DataLoader:
-    def __init__(self, dataset, labelset, batch_size=256, prefetch_size=8, shuffle=True, seed=42, transform=(lambda x: x)):
+    def __init__(self, dataset, labelset, num_workers=4, batch_size=256, prefetch_size=4, shuffle=True, seed=42, transform=(lambda x: x)):
         """
         Initialize a DataLoader.
 
@@ -26,8 +26,6 @@ class DataLoader:
 
         self.rng = np.random.default_rng(seed)
 
-        self.step = 0
-
         self.indices = Queue(maxsize=prefetch_size)
         self.rawes = Queue(maxsize=prefetch_size)
         self.batches = Queue(maxsize=prefetch_size)
@@ -36,8 +34,8 @@ class DataLoader:
 
         self.threads = [
             threading.Thread(target=self._sampler, args=(batch_size, shuffle, )),
-            threading.Thread(target=self._fetch),
-            threading.Thread(target=self._transform, args=(transform, ))
+            *[threading.Thread(target=self._fetch) for _ in range(num_workers)],
+            *[threading.Thread(target=self._transform, args=(transform, )) for _ in range(num_workers)]
         ]
 
         for thread in self.threads:
@@ -62,11 +60,12 @@ class DataLoader:
         
         while not self.stop_signal.is_set():
             if shuffle:
-                self.indices.put(self.rng.choice(n, batch_size, replace=False))
+                indices = self.rng.choice(n, batch_size, replace=False)
             else:
-                batch_idx = (base + pos) % n
+                indices = (base + pos) % n
                 pos = (pos + batch_size) % n
-                self.indices.put(batch_idx)
+                
+            self.indices.put(indices)
 
     def _fetch(self):
         """
@@ -112,8 +111,6 @@ class DataLoader:
         """
         # debug: monitor bottlenecks
         # print(self.indices.qsize(), self.rawes.qsize(), self.batches.qsize())
-
-        self.step += 1
         return self.batches.get()
     
     def __len__(self):
