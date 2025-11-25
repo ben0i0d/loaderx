@@ -1,9 +1,9 @@
 # loaderx
-A Minimal Data Loader for Flax
+A compact and high-performance single-machine data loader designed for JAX/Flax.
 
 ## Why Create loaderx?
 
-While Flax supports multiple data-loading backends—including PyTorch, TensorFlow, Grain, and jax_dataloader—each comes with notable drawbacks:
+While JAX/Flax supports multiple data-loading backends—including PyTorch, TensorFlow, Grain, and jax_dataloader—each comes with notable drawbacks:
 
 1. Installing large frameworks like PyTorch or TensorFlow *just* for data loading is often undesirable.
 2. Grain provides a clean API, but its real-world performance can be suboptimal.
@@ -21,26 +21,16 @@ loaderx is built around several core principles:
 ## Current Limitations
 Currently, loaderx only supports single-host environments and does not yet support multi-host training.
 
-## Array_record write & read
-*A quick start guide for those who are not yet familiar with ArrayRecord.*
+## Convert a NumPy tensor to Array_record
+
+*This will create a directory containing file shards, which helps improve I/O performance.*
 
 ```
 import numpy as np
-from array_record.python.array_record_module import ArrayRecordWriter
-from array_record.python.array_record_data_source import ArrayRecordDataSource
+from loaderx import converter
 
 train_data = np.load('train_data.npy',mmap_mode='r')
-dtype = train_data.dtype
-shape =  train_data[0].shape
-
-writer = ArrayRecordWriter("train_data.ar", options="group_size:1,zstd")
-
-for i in range(train_data.shape[0]):
-    writer.write(train_data[i].tobytes())
-
-ds = ArrayRecordDataSource("train_data.ar")
-
-np.frombuffer(ds[0], dtype=dtype).reshape(shape)
+converter(train_data, 'train_data')
 ```
 
 # Quick Start
@@ -48,17 +38,21 @@ np.frombuffer(ds[0], dtype=dtype).reshape(shape)
 import numpy as np
 from loaderx import NPDataset, ARDataset, DataLoader
 
-dataset = ARDataset('xsub/train_data.ar', dtype=np.float32, shape=(3, 300, 25, 2))
+dataset = ARDataset('train_data')
 labelset = NPDataset('xsub/train_label.npy')
+
+print(dataset[0])
 
 loader = DataLoader(dataset, labelset)
 
 for i, batch in enumerate(loader):
     if i >= 256:
         break
+
+print(batch['data'].shape)
+print(batch['label'].shape)
 ```
 
-## Integrating with Flax
+## Integrating with JAX/Flax
 
-For practical integration examples, please refer to the **Data2Latent** repository:
-**[https://github.com/eoeair/Data2Latent](https://github.com/eoeair/Data2Latent)**
+For practical integration examples, please refer to the **[Data2Latent](https://github.com/eoeair/Data2Latent)** repository

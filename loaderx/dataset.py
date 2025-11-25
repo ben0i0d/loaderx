@@ -1,4 +1,6 @@
+import json
 import numpy as np
+from pathlib import Path
 from array_record.python.array_record_data_source import ArrayRecordDataSource
 
 class BaseDataset:
@@ -68,12 +70,15 @@ class NPDataset(BaseDataset):
             mmap_obj.close()
 
 class ARDataset(BaseDataset):
-    def __init__(self, path, dtype=None, shape=None):
-        if dtype is None or shape is None:
-            raise ValueError("dtype and shape must be specified when backend is ar")
-        self._dtype = dtype
-        self._shape = shape
-        self._array = ArrayRecordDataSource(path)
+    def __init__(self, path):
+        path = Path(path)
+        with open(path / "meta.json", "r", encoding="utf-8") as f:
+            meta = json.load(f)
+        
+        self._length = meta["length"]
+        self._shape = meta["shape"]
+        self._dtype = meta['dtype']
+        self._array = ArrayRecordDataSource([str(path / f) for f in meta["blocks"]])
 
     def __getitem__(self, idx):
         return np.frombuffer(self._array[idx], dtype=self._dtype).reshape(self._shape)
@@ -82,7 +87,7 @@ class ARDataset(BaseDataset):
         return np.frombuffer(b"".join(self._array.__getitems__(idxs)), dtype=self._dtype).reshape(len(idxs), *self._shape)
 
     def __len__(self):
-        return len(self._array)
+        return self._length
 
     def close(self):
         self._array.__exit__(None, None, None)

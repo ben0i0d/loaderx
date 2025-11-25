@@ -3,9 +3,9 @@ import threading
 from queue import Queue
 
 class DataLoader:
-    def __init__(self, dataset, labelset, batch_size=256, prefetch_size=8, shuffle=True, seed=42, transform=(lambda x,y: (x, y))):
+    def __init__(self, dataset, labelset, batch_size=256, prefetch_size=8, shuffle=True, seed=42, transform=(lambda x: x)):
         """
-        Initialize a data loader.
+        Initialize a DataLoader.
 
         Args:
             dataset (BaseDataset): The dataset to load from.
@@ -14,10 +14,10 @@ class DataLoader:
             prefetch_size (int, optional): The number of batches to prefetch. Defaults to 8.
             shuffle (bool, optional): Whether to shuffle the samples. Defaults to True.
             seed (int, optional): The seed to use for shuffling. Defaults to 42.
-            transform (callable, optional): A callable to transform the data and label. Defaults to (lambda x, y: (x, y)).
+            transform (callable, optional): A function to apply to the data and label. Defaults to lambda x: x.
 
         Raises:
-            ValueError: If the dataset and labelset do not have the same length.
+            ValueError: If the dataset and labelset have different lengths.
         """
         self.dataset = dataset
         self.labelset = labelset
@@ -29,13 +29,15 @@ class DataLoader:
         self.step = 0
 
         self.indices = Queue(maxsize=prefetch_size)
+        self.rawes = Queue(maxsize=prefetch_size)
         self.batches = Queue(maxsize=prefetch_size)
         
         self.stop_signal = threading.Event()
 
         self.threads = [
             threading.Thread(target=self._sampler, args=(batch_size, shuffle, )),
-            threading.Thread(target=self._prefetch_data, args=(transform, ))
+            threading.Thread(target=self._fetch),
+            threading.Thread(target=self._transform, args=(transform, ))
         ]
 
         for thread in self.threads:
@@ -66,20 +68,39 @@ class DataLoader:
                 pos = (pos + batch_size) % n
                 self.indices.put(batch_idx)
 
-    def _prefetch_data(self, transform):
+    def _fetch(self):
         """
-        Prefetch data from the dataset into the batch queue.
+        Fetch the data and label from the dataset and labelset based on the indices
+        in the index queue and put them into the raw queue.
 
         This method is run in a separate thread and is responsible for
-        fetching data from the dataset, transforming it, and putting it
-        into the batch queue.
+        fetching the data and label from the dataset and labelset based on
+        the indices in the index queue, and putting the fetched data and
+        label into the raw queue.
 
-        Args:
-            transform (callable): data transformation function.
+        The method will stop when the stop signal is set.
         """
         while not self.stop_signal.is_set():
             idxs = self.indices.get()
-            data, label = transform(self.dataset.__getitems__(idxs), self.labelset.__getitems__(idxs))
+            self.rawes.put((self.dataset.__getitems__(idxs), self.labelset.__getitems__(idxs)))
+
+    def _transform(self, transform):
+
+        """
+        Apply a transformation to the data and label in the raw queue.
+
+        This method is run in a separate thread and is responsible for
+        applying a transformation to the data and label in the raw queue,
+        and putting the transformed data and label into the batch queue.
+
+        The method will stop when the stop signal is set.
+
+        Args:
+            transform (callable): A function that takes data and label as input
+                and returns transformed data and label.
+        """
+        while not self.stop_signal.is_set():
+            data, label = transform(self.rawes.get())
             self.batches.put({'data': data, 'label': label})
 
     def __next__(self):
@@ -89,6 +110,9 @@ class DataLoader:
         Returns:
             dict: A dictionary containing the batch data and label.
         """
+        # debug: monitor bottlenecks
+        # print(self.indices.qsize(), self.rawes.qsize(), self.batches.qsize())
+
         self.step += 1
         return self.batches.get()
     
