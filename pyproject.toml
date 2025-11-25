@@ -21,6 +21,12 @@ classifiers = [
 ]
 dependencies = ["numpy", "array-record", "tqdm"]
 
+[tool.setuptools]
+packages = ["loaderx"]
+
+[tool.setuptools.package-data]
+"loaderx" = ["lib/*.so"]
+
 [tool.setuptools.dynamic]
 version = {attr = "loaderx.__version__"}
 
