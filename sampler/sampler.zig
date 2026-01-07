@@ -1,113 +1,91 @@
 const std = @import("std");
 
 pub const Mode = enum {
-    Sequential,
-    RandomApprox,
+    sequential,
+    random,
 };
 
 pub const Sampler = struct {
-    n: usize,
+    num_samples: usize,
     batch_size: usize,
-    step: u64,
     mode: Mode,
 
-    rng: std.Random.DefaultPrng,
+    // sequential
+    cursor: usize = 0,
 
-    block: []usize,
-    block_size: usize,
-    usable_block: usize,
-    block_id: usize,
-
-    allocator: std.mem.Allocator,
+    // random
+    prng: std.rand.DefaultPrng,
 
     pub fn init(
-        allocator: std.mem.Allocator,
-        n: usize,
+        num_samples: usize,
         batch_size: usize,
         mode: Mode,
         seed: u64,
-    ) !Sampler {
-        const rng = std.Random.DefaultPrng.init(seed);
-
-        var block_size = batch_size * 8;
-        if (block_size > n) block_size = n;
-
-        const usable_block = (block_size / batch_size) * batch_size;
-        std.debug.assert(usable_block >= batch_size);
-
-        const block = try allocator.alloc(usize, block_size);
-
+    ) Sampler {
         return Sampler{
-            .n = n,
+            .num_samples = num_samples,
             .batch_size = batch_size,
-            .step = 0,
             .mode = mode,
-            .rng = rng,
-            .block = block,
-            .block_size = block_size,
-            .usable_block = usable_block,
-            .block_id = 0,
-            .allocator = allocator,
+            .cursor = 0,
+            .prng = std.rand.DefaultPrng.init(seed),
         };
     }
 
-    pub fn deinit(self: *Sampler) void {
-        self.allocator.free(self.block);
-    }
-
+    /// 每次调用只生成一个 batch
+    /// out.len 必须 == batch_size
     pub fn next(self: *Sampler, out: []usize) void {
+        std.debug.assert(out.len == self.batch_size);
+
         switch (self.mode) {
-            .Sequential => self.nextSequential(out),
-            .RandomApprox => self.nextRandomApprox(out),
+            .sequential => self.nextSequential(out),
+            .random => self.nextRandom(out),
         }
-        self.step += 1;
     }
 
-    // ======================
-    // 顺序 + 环形滑动窗口
-    // ======================
     fn nextSequential(self: *Sampler, out: []usize) void {
-        const start = self.step * self.batch_size;
-
         var i: usize = 0;
-        while (i < self.batch_size) : (i += 1) {
-            out[i] = (start + i) % self.n;
+        while (i < out.len) : (i += 1) {
+            out[i] = (self.cursor + i) % self.num_samples;
         }
+        self.cursor = (self.cursor + out.len) % self.num_samples;
     }
 
-    // ======================
-    // 近似全局随机
-    // ======================
-    fn refillBlock(self: *Sampler) void {
-        const start = (self.block_id * self.block_size) % self.n;
-
+    fn nextRandom(self: *Sampler, out: []usize) void {
+        var rng = self.prng.random();
         var i: usize = 0;
-        while (i < self.block_size) : (i += 1) {
-            self.block[i] = (start + i) % self.n;
-        }
-
-        // Fisher–Yates shuffle
-        var rnd = self.rng.random();
-        i = self.block_size;
-        while (i > 1) {
-            i -= 1;
-            const j = rnd.uintLessThan(usize, i + 1);
-            std.mem.swap(usize, &self.block[i], &self.block[j]);
-        }
-
-        self.block_id += 1;
-    }
-
-    fn nextRandomApprox(self: *Sampler, out: []usize) void {
-        const offset = (self.step * self.batch_size) % self.usable_block;
-
-        if (offset == 0) {
-            self.refillBlock();
-        }
-
-        var i: usize = 0;
-        while (i < self.batch_size) : (i += 1) {
-            out[i] = self.block[offset + i];
+        while (i < out.len) : (i += 1) {
+            out[i] = rng.uintLessThan(usize, self.num_samples);
         }
     }
 };
+
+/// ===== C ABI（可选，用于 loaderx / Python FFI）=====
+export fn sampler_create(
+    num_samples: usize,
+    batch_size: usize,
+    mode: u32, // 0 = sequential, 1 = random
+    seed: u64,
+) *Sampler {
+    const allocator = std.heap.c_allocator;
+
+    var sampler = allocator.create(Sampler) catch return null;
+    sampler.* = Sampler.init(
+        num_samples,
+        batch_size,
+        if (mode == 0) .sequential else .random,
+        seed,
+    );
+    return sampler;
+}
+
+export fn sampler_next(
+    sampler: *Sampler,
+    out_ptr: [*]usize,
+) void {
+    sampler.next(out_ptr[0..sampler.batch_size]);
+}
+
+export fn sampler_destroy(sampler: *Sampler) void {
+    const allocator = std.heap.c_allocator;
+    allocator.destroy(sampler);
+}

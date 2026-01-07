@@ -1,5 +1,5 @@
 const std = @import("std");
-const record = @import("record");
+const zrecord = @import("zrecord");
 
 pub fn main() !void {
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
@@ -7,5 +7,5 @@ pub fn main() !void {
     const allocator = gpa.allocator();
 
     // 允许覆盖
-    try record.OverwriteDir(allocator, "data");
+    try zrecord.OverwriteDir(allocator, "data");
 }
