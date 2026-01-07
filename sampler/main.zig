@@ -2,51 +2,38 @@ const std = @import("std");
 const sampler = @import("sampler.zig");
 
 pub fn main() !void {
-    const allocator = std.heap.page_allocator;
-
-    const n = 10;
+    const num_samples = 10;
     const batch_size = 4;
-    var buf: [batch_size]usize = undefined;
 
-    // ======================
-    // 顺序模式测试
-    // ======================
-    {
-        std.debug.print("=== Sequential (ring) ===\n", .{});
-        var s = try sampler.Sampler.init(
-            allocator,
-            n,
-            batch_size,
-            .Sequential,
-            0,
-        );
-        defer s.deinit();
+    var buffer: [batch_size]usize = undefined;
 
-        var step: usize = 0;
-        while (step < 6) : (step += 1) {
-            s.next(buf[0..]);
-            std.debug.print("step {d}: {any}\n", .{ step, buf });
-        }
+    // ===== 顺序滑动（环形）=====
+    std.debug.print("Sequential (circular):\n", .{});
+    var seq = sampler.Sampler.init(
+        num_samples,
+        batch_size,
+        .sequential,
+        0,
+    );
+
+    var step: usize = 0;
+    while (step < 5) : (step += 1) {
+        seq.next(&buffer);
+        std.debug.print("step {d}: {any}\n", .{ step, buffer });
     }
 
-    // ======================
-    // 近似全局随机测试
-    // ======================
-    {
-        std.debug.print("\n=== Random Approx (block shuffle) ===\n", .{});
-        var s = try sampler.Sampler.init(
-            allocator,
-            n,
-            batch_size,
-            .RandomApprox,
-            1234,
-        );
-        defer s.deinit();
+    // ===== 全局随机 =====
+    std.debug.print("\nRandom (global):\n", .{});
+    var rnd = sampler.Sampler.init(
+        num_samples,
+        batch_size,
+        .random,
+        12345,
+    );
 
-        var step: usize = 0;
-        while (step < 6) : (step += 1) {
-            s.next(buf[0..]);
-            std.debug.print("step {d}: {any}\n", .{ step, buf });
-        }
+    step = 0;
+    while (step < 5) : (step += 1) {
+        rnd.next(&buffer);
+        std.debug.print("step {d}: {any}\n", .{ step, buffer });
     }
 }
