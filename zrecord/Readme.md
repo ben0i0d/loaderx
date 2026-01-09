@@ -1,10 +1,10 @@
 # 设计思想
 
-在保持 ArrayRecord 使用习惯的前提下，提供一个并发友好、实现更简单、单机性能更优的 record 存储格式，用于替代 ArrayRecord 并解决其并发读取瓶颈
+基于Zig实现一个并发友好、实现更简单、单机性能更优的 record 存储系统，用于替代 ArrayRecord 并解决其并发读取瓶颈
 
-1. ZRecord 面向机器学习场景，原生基于 record 思想设计，我们不假定record间存在顺序关系
-2. 每个 record 是相互独立的逻辑记录，但在 Python 侧提供与 NumPy 兼容的 array 接口投影，以便无缝集成现有 ML 生态
-3. block 文件是并行与隔离的最小单位
+1. ZRecord基于 record 思想设计，我们不假定record间存在顺序关系，对于顺序语义应在record内部表达或建立timestamp
+2. record是相互独立的逻辑记录，但在 Python 侧提供与 NumPy 兼容的 array 接口投影
+3. zrecord是无类型的，数据只是Bytes，类型解析由上层完成
 
 # 存储形式
 1. ZRecord 仅包含一个多流数据集，长度为 N（N 个 record）
@@ -24,131 +24,124 @@
 | raw   | 无压缩  | 
 | flate | Deflate | 
 ```
-3. record通常是不定长的，通过indirection支持高级操作（删除/覆盖/插入），offset支持高效随机访问
-    * indirection表是一个列表 [idx : u32, ...]，长度为N。将外部索引空间（outside[0, N]）指向一个内部索引空间
-        * idx默认类型为u32：idx类型由数据集长度合理得出
+3. 通过offset支持高效随机访问
+    * offset表项是一个三元组 [[chunk_id : T, offset : T, length : T], ...]，长度为N。将外部索引空间（outside[0, N]）指向一个实际存储地址
+        * chunk_id为无符号整数泛型，表示具体chunk
+        * offset为无符号整数泛型, 表示具体chunk内的偏移
+        * length为无符号整数泛型，表示record数据大小
+        * 为了字节对齐和性能，offset项建议选择 8 的整数倍字节宽
+        * 不同位宽表示的数值范围
         ```
-        u8   →   255
-        u16  →   65535
-        u32  →   4.29e9
-        u64  →   1.84e19
+        u16 → 2^16 - 1 （65535）
+        u24 → 2^24 - 1 （16777215）
+        u32 → 2^32 - 1 （4.29e9）
+        u64 → 2^64 - 1 （1.84e19）
         ```
+        * 不同位宽表示的数据大小
+        ```
+        u16 → 64 KiB
+        u24 → 16 MiB
+        u32 → 4 GiB
+        u64 → 16 EiB
+        ```
+        * offset表每项的字节大小最好为 8 的整数倍，提升对齐和缓存效率
     ```
     outside idx (global)
     ↓
-    ↓indirection[idx] = physical_id
+    ↓offset[idx]
     ↓
-    block_id = physical_id // block_size
-    local_idx = physical_id % block_size
-    ↓
-    offset[local_idx] → (offset, length)
+    chunk_id, offset, length
     ```
-    * offset表是一个三元组 [[offset : u64, physical_length : u32, logical_length : u32] ...]，长度<=block_size
-        * offset表内元素类型与存储大小有关，offset类型由block文件大小合理得出，length（physical_length/logical_length）由record大小合理得出
-        * offset默认类型为u64
-        * length（physical_length/logical_length）默认类型为u32
-            * physical_length是record写入长度
-            * logical_length是record原始长度（无压缩情况下，physical_length==logical_length）
-        ```
-        u8   →   255 B
-        u16  →   64 KB
-        u32  →   4 GB
-        u64  →   16 EB
-        ```
-4. 为规避文件系统 IO 锁与并发瓶颈，ZRecord的存储是元数据+分块的格式
+4. ZRecord的存储是元数据+分块的格式
     1. 元数据
-        * meta.json：描述全局元数据，包括全局参数（版本、数据集长度、分块大小、间接索引表类型）与Field参数
+        * meta.json：描述全局元数据，包括全局参数与Field参数
         ```
         {
         "version": 1,
         "length": 65536,
-        "block_size": 8192,
-        "indirection_dtype": "u32",
+        "chunk_size": 8192,
+        "offset_dtype": {"chunk_id": "u16", "offset": "u40", "length": "u24"},
         "fields": {
-            "A": {"dtype": "f32", "compressed": "zstd", "offset_dtype": "u64", "length_dtype": "u32"}
-            "B": {"dtype": "i32", "compressed": "raw", "offset_dtype": "u32", "length_dtype": "u8"}
+            "A": {"dtype": "f32", "compressed": "flate"},
+            "B": {"dtype": "i32", "compressed": "raw"}
         }
         }
         ```
-        * indirection.zr：间接索引表
-        * offset/Field_x.zr: 每个block的offset表
+        * Field_offset.zr：索引表
         ```
-        0 255
-        256 511
+        0 0 255
+        0 256 511
         ...
         ```
     2. 分块数据
-        * block/Field_x.zr: 包含最多 block_size 个 record
+        * chunk/Field_x.zr: 包含分块的chunk数据
 
 存储格式如下
 ```
 dataset
   ├── meta.json
-  ├── indirection.zr
-  ├── offset
+  ├── A_offset.zr
+  ├── B_offset.zr
+  ├── chunk
   │    ├── A_0.zr
-  │    └── B_1.zr
-  ├── block
-  │    ├── A_0.zr
-  └──└── B_1.zr
+  └──└── B_0.zr
 ```
 
-# 调度器
+# 执行器
 
-负责同步执行写任务并维护RAL队列
+负责维护任务队列，工作线程，handle
 
-1. RAL(Read Access Log)队列：每个block持有独立block_id_RAL无竞态队列，支持异步
-2. 任务（Task）：
-    * 写任务调用对应线程同步执行，确保不引入不确定性
-    * 读任务压入block_id_RAL, [idx, ...] --> block_id - [[local_idx, ...]]
-3. 调度规则（block 级并行，share-nothing）
-    * 每个 block 在任一时刻只由一个工作线程处理, block 数 = 线程数  → 一 block 一线程
-    * 工作线程异步从block_id_RAL队列中提取任务
+1. 任务队列：
+    * write_task：写任务队列，压入[ops, record]，等待writer弹出
+    * read_task：读任务队列，预分配batch并压入[batch, pos, chunk_id, offset, physical_length]，等待reader弹出
+        * batch: 具体读取请求下创建的与indices等长的二元组
+        * pos：在batch中的位置，保证等序返回
+    * gc_task：垃圾回收任务队列，压入batch，等待cleaner弹出
 
-# 任务
+2. 工作线程：执行具体任务的工作线程
+    * writer：线程组（一组固定的多线程）执行写任务，每个线程对应一个未满chunk
+        * num_writer推荐：1-4
+    * reader：线程池执行读任务
+        * num_reader推荐：8-32
+    * cleaner：线程池执行垃圾回收任务
+        * num_cleaner推荐：2-4
 
-## 写任务
+3. handle：
+    1. mmap：维护全局offset、chunk文件的handle
+        * 初始化阶段注册
+        * 关闭前释放
+    2. batch：维护每次返回batch的handle,也就是[ptr, logical_length]中ptr的合规性
+        * 工作线程完成后注册
+        * 必须调用函数来手动释放，释放时batch压入GC队列
 
-写入只允许append-only,所有高级操作基于对indirection的重定向，同时注意所有写入都必须同时提供所有field参数
+## 在线任务
 
-1. 追加：追加一个数据，record追加到最后一个block末尾，offset表追加条目，如果超过block_size,则新建block
-    * 调用block_id_Thread append方法, 检验是否需要新建block, 增加末尾record, 追加offset条目，新的offset是前一条offset+length/0,length是压缩后bytes长度，全局长度增加
+1. 写任务：写入只允许chunk-level append-only,其余操作基于offset重定向，缺失的field构造为全为0的项（length为0代表无）
+    1. 追加：追加一个数据，record追加到chunk末尾，offset表追加条目，全局长度增加，如果超过chunk_size,则新建chunk
+    2. 修改：追加一个record，并修改offset项
+    3. 删除：删除offset项，全局长度减小
 
-2. 修改：追加一个record，并修改indirection项
+2. 读任务：用一个indices（索引数组），从原数组里访问指定位置的元素(gather)
+    1. 对于无压缩的数据，将直接返回文件内地址实现zero-copy
 
-3. 删除：删除indirection项
+    读取流程
+    ```
+    [idx]
+    ↓
+    [batch, pos, idx]
+    ↓
+    [batch, pos, chunk_id, offset, physical_length]
+    ↓
+    [ptr, logical_length]
+    ```
 
-4. 插入：追加一个record，并插入indirection项
+3. 垃圾回收任务：cleaner从GC队列中释放对应batch
+    1. 对于无压缩的数据，不释放内存，只释放 batch 本身
+    2. 对于有压缩的数据，释放内存
+    3. GC后访问ptr属于UB行为
 
-## 读任务
+## 离线任务
 
-用一个indices（索引数组），从原数组里访问指定位置的元素
-
-1. IO 与解压阶段分离，避免在同一执行路径中混合 IO 密集型与 CPU 密集型任务
-2. 数据类型支持
-    * 整数：  i32
-    * 单精度：f32
-    * 半精度：f16 
-3. 对于无压缩的数据，将直接返回文件内地址实现zero-copy
-
-读取流程
-```
-[idx0, idx1, ...]
-↓
-[(0, idx0), (1, idx1), ...]
-↓
-[(0, physical_idx0), (1, physical_idx1), ...]
-↓
-[(0, block_id0, local_idx0), (1, block_id1, local_idx1), ...]
-↓
-block 0 → [(0, local_idx0), (1, local_idx1), ...]
-block 1 → [(2, local_idx0), (3, local_idx1), ...]
-↓
-[(ptr0, length0), (ptr1, length1), ...]
-```
-
-## 维护任务
-
-1. 垃圾回收（GC）：indirection经过大量操作后，会出现空洞,通过垃圾回收来回收资源
-    * 实现：根据indirection进行重写入，并在完成后替换
-    * GC只允许手动运行，确保用户知情，这被设计为一个离线操作，但提供一个计算垃圾占比（无效bytes/总bytes）的函数
+1. 重平衡（Rebalance）：zrecord经过大量写操作后，会出现chunk访问不平衡,通过重平衡来恢复chunk的可访问性
+    * 实现：根据offset进行重写入，并在完成后替换
+    * Rebalance只允许手动运行，确保用户知情，提供一个计算无效数据占比（无效bytes/总bytes）的函数
