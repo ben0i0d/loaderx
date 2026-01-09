@@ -36,16 +36,19 @@
     ```
     outside idx (global)
     ↓
-    indirection[idx] = physical_id
+    ↓indirection[idx] = physical_id
     ↓
     block_id = physical_id // block_size
     local_idx = physical_id % block_size
     ↓
     offset[local_idx] → (offset, length)
     ```
-    * offset表是一个二元组 [[offset : u64, length : u32] ...]，长度<=block_size
-        * offset默认类型为u64：offset类型由block文件大小合理得出
-        * length默认类型为u32：length类型由record大小合理得出
+    * offset表是一个三元组 [[offset : u64, physical_length : u32, logical_length : u32] ...]，长度<=block_size
+        * offset表内元素类型与存储大小有关，offset类型由block文件大小合理得出，length（physical_length/logical_length）由record大小合理得出
+        * offset默认类型为u64
+        * length（physical_length/logical_length）默认类型为u32
+            * physical_length是record写入长度
+            * logical_length是record原始长度（无压缩情况下，physical_length==logical_length）
         ```
         u8   →   255 B
         u16  →   64 KB
@@ -119,12 +122,30 @@ dataset
 
 ## 读任务
 
-1. 读取：用一个indices（索引数组），从原数组里访问指定位置的元素,并提交给线程池解压后（如有压缩）完成类型解析
-    * IO 与解压阶段分离，避免在同一执行路径中混合 IO 密集型与 CPU 密集型任务
-    * 数据类型支持
-        * 整数：  i32
-        * 单精度：f32
-        * 半精度：f16
+用一个indices（索引数组），从原数组里访问指定位置的元素
+
+1. IO 与解压阶段分离，避免在同一执行路径中混合 IO 密集型与 CPU 密集型任务
+2. 数据类型支持
+    * 整数：  i32
+    * 单精度：f32
+    * 半精度：f16 
+3. 对于无压缩的数据，将直接返回文件内地址实现zero-copy
+
+读取流程
+```
+[idx0, idx1, ...]
+↓
+[(0, idx0), (1, idx1), ...]
+↓
+[(0, physical_idx0), (1, physical_idx1), ...]
+↓
+[(0, block_id0, local_idx0), (1, block_id1, local_idx1), ...]
+↓
+block 0 → [(0, local_idx0), (1, local_idx1), ...]
+block 1 → [(2, local_idx0), (3, local_idx1), ...]
+↓
+[(ptr0, length0), (ptr1, length1), ...]
+```
 
 ## 维护任务
 
