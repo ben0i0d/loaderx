@@ -1,6 +1,6 @@
 # 设计思想
 
-基于Zig实现一个并发友好、实现更简单、单机性能更优的 record 存储系统，用于替代 ArrayRecord 并解决其并发读取瓶颈
+基于Zig实现一个并发友好、实现更简单、单机性能更优的 record 存储系统
 
 1. ZRecord基于 record 思想设计，我们不假定record间存在顺序关系，对于顺序语义应在record内部表达或建立timestamp
 2. record是相互独立的逻辑记录，但在 Python 侧提供与 NumPy 兼容的 array 接口投影
