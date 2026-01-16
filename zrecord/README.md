@@ -25,10 +25,10 @@
 | flate | Deflate | 
 ```
 3. 通过offset支持高效随机访问
-    * offset表项是一个三元组 [[chunk_id : T, offset : T, length : T], ...]，长度为N。将外部索引空间（outside[0, N]）指向一个实际存储地址
-        * chunk_id为无符号整数泛型，表示具体chunk
-        * offset为无符号整数泛型, 表示具体chunk内的偏移
-        * length为无符号整数泛型，表示record数据大小
+    * offset表项是一个三元组 [[chunk_id : u16, offset : u40, length : u24], ...]，长度为N。将外部索引空间（outside[0, N]）指向一个实际存储地址
+        * chunk_id为u16，表示具体chunk
+        * offset为u40, 表示具体chunk内的偏移
+        * length为u24，表示record数据大小
         * 为了字节对齐和性能，offset项建议选择 8 的整数倍字节宽
         * 不同位宽表示的数值范围
         ```
@@ -42,6 +42,7 @@
         u16 → 64 KiB
         u24 → 16 MiB
         u32 → 4 GiB
+        u40 → 1 TiB
         u64 → 16 EiB
         ```
         * offset表每项的字节大小最好为 8 的整数倍，提升对齐和缓存效率
@@ -60,12 +61,16 @@
         "version": 1,
         "length": 65536,
         "chunk_size": 8192,
-        "offset_dtype": {"chunk_id": "u16", "offset": "u40", "length": "u24"},
-        "fields": {
-            "A": {"dtype": "f32", "compressed": "flate"},
-            "B": {"dtype": "i32", "compressed": "raw"}
+        "fields": [{"name": "A", "dtype": "f32", "compress": "flate"}, {"name": "B", "dtype": "i32", "compress": "raw"}]
         }
-        }
+        ```
+        ```
+        pub const Meta = struct {
+            version: u8,
+            length: u64,
+            chunk_size: u32,
+            fields: []struct { name: []const u8, dtype: []const u8, compress: []const u8 },
+        };
         ```
         * Field_offset.zr：索引表
         ```
