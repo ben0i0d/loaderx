@@ -91,7 +91,7 @@ dataset
 
 1. 任务队列：
     * write_task：写任务队列，压入[ops, record]，等待writer弹出
-    * read_task：读任务队列，预分配batch并压入[batch, pos, chunk_id, offset, physical_length]，等待reader弹出
+    * read_task：读任务队列，预分配batch并压入[batch, pos, chunk_id, offset, length]，等待reader弹出
         * batch: 具体读取请求下创建的与indices等长的二元组
         * pos：在batch中的位置，保证等序返回
     * gc_task：垃圾回收任务队列，压入batch，等待cleaner弹出
@@ -128,7 +128,7 @@ dataset
     ↓
     [batch, pos, idx]
     ↓field_offset
-    [batch, pos, chunk_id, offset, physical_length]
+    [batch, pos, chunk_id, offset, length]
     ↓
     [ptr, logical_length]
     ```
