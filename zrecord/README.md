@@ -3,8 +3,9 @@
 基于Zig实现一个并发友好、实现更简单、单机性能更优的 record 存储系统
 
 1. ZRecord基于 record 思想设计，我们不假定record间存在顺序关系，对于顺序语义应在record内部表达或建立timestamp
-2. record是相互独立的逻辑记录，但在 Python 侧提供与 NumPy 兼容的 array 接口投影
+2. record是相互独立的逻辑记录，在 Python 侧提供与 NumPy 兼容的 array 接口投影
 3. zrecord是无类型的，数据只是Bytes，类型解析由上层完成
+4. chunk只是存储管理单元，提高并发性能，不具备语义
 
 # 存储形式
 1. ZRecord 仅包含一个多流数据集，长度为 N（N 个 record）
@@ -64,14 +65,6 @@
         "fields": [{"name": "A", "dtype": "f32", "compress": "flate"}, {"name": "B", "dtype": "i32", "compress": "raw"}]
         }
         ```
-        ```
-        pub const Meta = struct {
-            version: u8,
-            length: u64,
-            chunk_size: u32,
-            fields: []struct { name: []const u8, dtype: []const u8, compress: []const u8 },
-        };
-        ```
         * Field_offset.zr：索引表
         ```
         0 0 255
@@ -79,7 +72,7 @@
         ...
         ```
     2. 分块数据
-        * chunk/Field_x.zr: 包含分块的chunk数据
+        * chunk/x.zr: 分块的chunk数据,chunk不区分数据所属
 
 存储格式如下
 ```
@@ -88,8 +81,8 @@ dataset
   ├── A_offset.zr
   ├── B_offset.zr
   ├── chunk
-  │    ├── A_0.zr
-  └──└── B_0.zr
+  │    ├── 0.zr
+  └──└── 1.zr
 ```
 
 # 执行器
@@ -134,7 +127,7 @@ dataset
     [idx]
     ↓
     [batch, pos, idx]
-    ↓
+    ↓field_offset
     [batch, pos, chunk_id, offset, physical_length]
     ↓
     [ptr, logical_length]
