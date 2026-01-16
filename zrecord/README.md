@@ -3,7 +3,7 @@
 基于Zig实现一个并发友好、实现更简单、单机性能更优的 record 存储系统
 
 1. ZRecord基于 record 思想设计，我们不假定record间存在顺序关系，对于顺序语义应在record内部表达或建立timestamp
-2. record是相互独立的逻辑记录，在 Python 侧提供与 NumPy 兼容的 array 接口投影
+2. record是相互独立的逻辑记录，仅在 Python 侧提供与 NumPy 兼容的 array 接口投影
 3. zrecord是无类型的，数据只是Bytes，类型解析由上层完成
 4. chunk只是存储管理单元，提高并发性能，不具备语义
 
@@ -26,10 +26,10 @@
 | flate | Deflate | 
 ```
 3. 通过offset支持高效随机访问
-    * offset表项是一个三元组 [[chunk_id : u16, offset : u40, length : u24], ...]，长度为N。将外部索引空间（outside[0, N]）指向一个实际存储地址
+    * offset表项是一个三元组 [[chunk_id : u16, offset : u40, physical_length : u24], ...]，长度为N。将外部索引空间（outside[0, N]）指向一个实际存储地址
         * chunk_id为u16，表示具体chunk
         * offset为u40, 表示具体chunk内的偏移
-        * length为u24，表示record数据大小
+        * physical_length为u24，表示record数据大小
         * 为了字节对齐和性能，offset项建议选择 8 的整数倍字节宽
         * 不同位宽表示的数值范围
         ```
@@ -52,7 +52,7 @@
     ↓
     ↓offset[idx]
     ↓
-    chunk_id, offset, length
+    chunk_id, offset, physical_length
     ```
 4. ZRecord的存储是元数据+分块的格式
     1. 元数据
@@ -61,7 +61,7 @@
         {
         "version": 1,
         "length": 65536,
-        "chunk_size": 8192,
+        "chunks": {"num": 12, "size": 8192, "unfull": [8, 9, 10, 11]},
         "fields": [{"name": "A", "dtype": "f32", "compress": "flate"}, {"name": "B", "dtype": "i32", "compress": "raw"}]
         }
         ```
@@ -91,13 +91,14 @@ dataset
 
 1. 任务队列：
     * write_task：写任务队列，压入[ops, record]，等待writer弹出
-    * read_task：读任务队列，预分配batch并压入[batch, pos, chunk_id, offset, length]，等待reader弹出
+    * read_task：读任务队列，预分配batch并压入[batch, pos, chunk_id, offset, physical_length]，等待reader弹出
         * batch: 具体读取请求下创建的与indices等长的二元组
         * pos：在batch中的位置，保证等序返回
     * gc_task：垃圾回收任务队列，压入batch，等待cleaner弹出
 
 2. 工作线程：执行具体任务的工作线程
-    * writer：线程组（一组固定的多线程）执行写任务，每个线程对应一个未满chunk
+    * writer：线程池执行写任务，但每个线程固定对应一个chunk
+        * writer只会向自己的chunk写入（chunk生命周期由执行器管理，新建chunk需要提交给执行器完成）
         * num_writer推荐：1-4
     * reader：线程池执行读任务
         * num_reader推荐：8-32
@@ -114,10 +115,10 @@ dataset
 
 ## 在线任务
 
-1. 写任务：写入只允许chunk-level append-only,其余操作基于offset重定向，缺失的field构造为全为0的项（length为0代表无）
+1. 写任务：写入只允许chunk-level append-only,其余操作基于offset重定向，缺失的field构造为全为0的项（physical_length为0代表无）
     1. 追加：追加一个数据，record追加到chunk末尾，offset表追加条目，全局长度增加，如果超过chunk_size,则新建chunk
     2. 修改：追加一个record，并修改offset项
-    3. 删除：删除offset项，全局长度减小
+    3. 删除：删除offset项(将目标项替换为最后一项)，全局长度减小（越界访问属于UB行为）
 
 2. 读任务：用一个indices（索引数组），从原数组里访问指定位置的元素(gather)
     1. 对于无压缩的数据，将直接返回文件内地址实现zero-copy
@@ -128,7 +129,7 @@ dataset
     ↓
     [batch, pos, idx]
     ↓field_offset
-    [batch, pos, chunk_id, offset, length]
+    [batch, pos, chunk_id, offset, physical_length]
     ↓
     [ptr, logical_length]
     ```
