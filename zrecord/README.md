@@ -143,4 +143,23 @@ dataset
 
 1. 重平衡（Rebalance）：zrecord经过大量写操作后，会出现chunk访问不平衡,通过重平衡来恢复chunk的可访问性
     * 实现：根据offset进行重写入，并在完成后替换
-    * Rebalance只允许手动运行，确保用户知情，提供一个计算无效数据占比（无效bytes/总bytes）的函数
+    * Rebalance只允许手动运行，确保用户知情，提供一个利用率（sum(length)/sum(chunk_size*num_chunks)）
+
+## 分布式扩展
+
+**该部分暂时不会实现，只是提前架构**
+
+1. 分布式下，我们会得到一个更高的层次-cluster,单机将变为cluster内的node
+2. node持有一个shard,包含若干个chunk
+3. 添加一个indirection表，将全局路径映射到具体node的表，indirection也可以使用hash实现，从而无锁，索引路径变为
+```
+outside idx (global)
+↓
+↓indirection[idx]
+↓
+node, idx
+↓
+↓offset[idx]
+↓
+chunk_id, offset, physical_length
+```
