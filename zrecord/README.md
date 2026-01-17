@@ -98,7 +98,7 @@ dataset
 
 2. 工作线程：执行具体任务的工作线程
     * writer：线程池执行写任务，但每个线程固定对应一个chunk
-        * writer只会向自己的chunk写入（chunk生命周期由执行器管理，新建chunk需要提交给执行器完成）
+        * writer只会向自己的chunk写入（写满时新建chunk提交给执行器完成）
         * num_writer推荐：1-4
     * reader：线程池执行读任务
         * num_reader推荐：8-32
@@ -107,8 +107,8 @@ dataset
 
 3. handle：
     1. mmap：维护全局offset、chunk文件的handle
-        * 初始化阶段注册
-        * 关闭前释放
+        * 初始化阶段注册,关闭前释放
+        * 对于full的chunk,使用mmap+close（只读），对于unfull的chunk使用mmap（读写）。一旦写满（writer提交），新建chunk并返回给writer,原mmap close。（避免过多占用fd）
     2. batch：维护每次返回batch的handle,也就是[ptr, logical_length]中ptr的合规性
         * 工作线程完成后注册
         * 必须调用函数来手动释放，释放时batch压入GC队列
