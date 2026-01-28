@@ -1,6 +1,8 @@
 # loaderx
 A record-based data runtime, focused on delivering extreme throughput and low latency
 
+**Important Reminder**: Only support Linux_amd64. This is because we use a dynamic library built with Zig (we build it on Alpine and test it on Debian).
+
 ## Sampler
 a high-performance sampler implemented in Zig
 ### Build

@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "loaderx"
 dynamic = ["version"]
-description = "Minimal data loader for Flax"
+description = "A record-based data runtime, focused on delivering extreme throughput and low latency"
 readme = "README.md"
 requires-python = ">=3.10"
 authors = [
@@ -31,7 +31,7 @@ packages = ["loaderx"]
 version = {attr = "loaderx.__version__"}
 
 [project.urls]
-"Homepage" = "https://github.com/eoeair/loaderx"
-"Documentation" = "https://github.com/eoeair/loaderx"
-"Source" = "https://github.com/eoeair/loaderx"
-"Bug Tracker" = "https://github.com/eoeair/loaderx/issues"
+"Homepage" = "https://codeberg.org/eoelab/loaderx"
+"Documentation" = "https://codeberg.org/eoelab/loaderx"
+"Source" = "https://codeberg.org/eoelab/loaderx"
+"Bug Tracker" = "https://codeberg.org/eoelab/loaderx"
