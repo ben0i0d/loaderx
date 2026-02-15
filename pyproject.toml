@@ -7,7 +7,7 @@ name = "loaderx"
 dynamic = ["version"]
 description = "A record-based data runtime, focused on delivering extreme throughput and low latency"
 readme = "README.md"
-requires-python = ">=3.10"
+requires-python = "==3.13"
 authors = [
     {name = "Ben0i0d", email = "ben0i0d@foxmail.com"},
 ]

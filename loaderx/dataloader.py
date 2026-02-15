@@ -47,8 +47,8 @@ class DataLoader:
         Sample indices from the dataset and put them into the index queue.
         """
         while not self.stop_signal.is_set():
-            self.sampler.next()   
-            self.indices.put(self.sampler.batch_indices.copy())
+            self.sampler.next()
+            self.indices.put(self.sampler.indices.copy())
 
     def _prefetch(self, transform):
         """

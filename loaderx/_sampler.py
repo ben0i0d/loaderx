@@ -4,67 +4,22 @@ import ctypes
 import numpy as np
 from typing import Union
 
+from lib import libsampler
+
 class Sampler:
-    
     class Mode:
         SEQUENTIAL = 0
         IID = 1
-    
-    # lazy import
-    _lib = None
-    @classmethod
-    def _load_lib(cls):
-        if cls._lib is None:
-            # linux/windows/macos
-            names = ['lib/libsampler.so', 'lib/sampler.dll', 'lib/libsampler.dylib']
-            lib_paths = [os.path.join(os.path.dirname(__file__), name) for name in names]
-
-            for path in lib_paths:
-                if os.path.exists(path):
-                        cls._lib = ctypes.CDLL(path)
-                        cls._setup_function_signatures()
-        return cls._lib
-    
-    @classmethod
-    def _setup_function_signatures(cls):
-        lib = cls._lib
-        
-        # init
-        lib.init.argtypes = [
-            ctypes.c_void_p,  # sampler
-            ctypes.c_uint64,  # length
-            ctypes.c_uint64,  # batch_size
-            ctypes.c_uint8,   # mode
-            ctypes.c_uint64   # seed
-        ]
-        lib.init.restype = None
-        
-        # size
-        lib.size.restype = ctypes.c_size_t
-
-        # next
-        lib.next.argtypes = [
-            ctypes.c_void_p,     # sampler
-            ctypes.c_void_p      # batch_indices
-        ]
-        lib.next.restype = None
 
     def __init__(self, length: int, batch_size: int, mode: int, seed: int = 42):
-        # import lib
-        self.lib = self._load_lib()
-
         # sampler
-        self.sampler = ctypes.create_string_buffer(self.lib.size())
-        self.sampler_ptr = ctypes.cast(self.sampler, ctypes.c_void_p)
-        self.lib.init(self.sampler_ptr, length, batch_size, mode, seed)
-        
-        # batch_indices
+        self.sampler = libsampler.Sampler.init(length, batch_size, mode, seed)
+        # indices
         self.indices = np.zeros(batch_size, dtype=np.uint64)
-        self.indices_ptr = self.indices.ctypes.data
 
     # step
     def next(self):
-        self.lib.next(self.sampler_ptr, self.indices_ptr)
+        self.sampler.next(self.indices)
 
     # iterator
     def __iter__(self):

@@ -1,0 +1,15 @@
+.{
+    .name = .zsampler,
+    .version = "0.3.0",
+    .fingerprint = 0xab4beaaed4f16adf,
+    .dependencies = .{
+        .PyOZ = .{
+            .url = "https://github.com/pyozig/PyOZ/archive/refs/tags/v0.11.3.tar.gz",
+            .hash = "PyOZ-0.11.3-ntlpPszRFQAC2vYDaWNU4YsMJ5GnO002_yMYT1A3R0RK",
+        },
+    },
+    .paths = .{
+        "build.zig",
+        "build.zig.zon",
+    },
+}
