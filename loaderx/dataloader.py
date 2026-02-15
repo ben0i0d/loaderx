@@ -26,12 +26,10 @@ class DataLoader:
         if len(dataset) != len(labelset):
             raise ValueError("dataset and labelset must have the same length")
 
-        self.rng = np.random.default_rng(seed)
-
         self.indices = Queue(maxsize=prefetch_size)
         self.batches = Queue(maxsize=prefetch_size)
 
-        self.sampler = Sampler(len(dataset), batch_size, mode)
+        self.sampler = Sampler(len(dataset), batch_size, mode, seed)
         
         self.stop_signal = threading.Event()
 
@@ -73,7 +71,7 @@ class DataLoader:
         return self
     def __next__(self):
         # debug: monitor bottlenecks
-        # print(self.indices.qsize(), self.rawes.qsize(), self.batches.qsize())
+        # print(self.indices.qsize(), self.batches.qsize())
         return self.batches.get()
     
     # statement

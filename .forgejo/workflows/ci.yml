@@ -1,0 +1,31 @@
+name: CI
+
+on:
+  # Triggers the workflow on push or pull request events but only for the "main" branch
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+
+  # Allows you to run this workflow manually from the Actions tab
+  workflow_dispatch:
+
+jobs:
+  Build&Push:
+    runs-on: runner
+    container:
+      image: codeberg.org/eoelab/cenv:zig
+    steps:
+      - run: apt-get update --yes && apt-get install --yes git twine python3-build python3-venv
+      - run: git clone https://codeberg.org/eoelab/loaderx.git
+      - run: |
+          cd loaderx/sampler
+          zig build
+          mv zig-out/lib/libsampler.so ../loaderx/lib/
+      - run: |
+          cd loaderx
+          python3 -m build
+          twine upload dist/*
+        env:
+          TWINE_USERNAME: __token__
+          TWINE_PASSWORD: ${{ secrets.PYPI_PAT }}

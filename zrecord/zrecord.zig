@@ -2,8 +2,8 @@ const std = @import("std");
 const fs = std.fs;
 const Allocator = std.mem.Allocator;
 
-pub fn OverwriteDir(
-    allocator: Allocator,
+pub fn write(
+    chunk: Allocator,
     relative_path: []const u8,
 ) !void {
     const cwd = fs.cwd();
