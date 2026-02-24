@@ -32,6 +32,7 @@ a high-performance sampler implemented in Zig
 3. 通过offset支持高效随机访问
     * offset表项是一个三元组 [[chunk_id : u12, offset : u32, physical_length : u20], ...]，长度为N。将外部索引空间（outside[0, N]）指向一个实际存储地址
         * chunk_id为u12，表示具体chunk | offset为u32, 表示具体chunk内的偏移 | physical_length为u20，表示record数据大小
+        * 隐含上限：length_max = 16777216（2^24）
         * offset表每项的字节大小最好为 8 的整数倍，提升对齐和缓存效率
         * offset表是mmap访问模式，由于等长，直接将 idx 转换为 ptr + 8*idx
         * 不同位宽表示的数值范围
@@ -69,16 +70,15 @@ a high-performance sampler implemented in Zig
         ...
         ```
     2. 分块数据
-        * chunk/x.zr: 分块的chunk数据,chunk不区分数据所属
+        * x.zr: 分块的chunk数据,chunk不区分数据所属
 
 存储格式如下
 ```
-dataset
+dataset/
   ├── meta.json
   ├── offset.zr
-  ├── chunk
-  │    ├── 0.zr
-  └──└── 1.zr
+  ├── 0.zr
+  └── 1.zr
 ```
 
 ### 执行器
