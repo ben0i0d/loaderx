@@ -30,23 +30,21 @@ a high-performance sampler implemented in Zig
 | flate | Deflate | 
 ```
 3. 通过offset支持高效随机访问
-    * offset表项是一个三元组 [[chunk_id : u32, offset : u64, physical_length : u32], ...]，长度为N。将外部索引空间（outside[0, N]）指向一个实际存储地址
-        * chunk_id为u32，表示具体chunk
-        * offset为u64, 表示具体chunk内的偏移
-        * physical_length为u32，表示record数据大小
+    * offset表项是一个三元组 [[chunk_id : u12, offset : u32, physical_length : u20], ...]，长度为N。将外部索引空间（outside[0, N]）指向一个实际存储地址
+        * chunk_id为u12，表示具体chunk | offset为u32, 表示具体chunk内的偏移 | physical_length为u20，表示record数据大小
         * offset表每项的字节大小最好为 8 的整数倍，提升对齐和缓存效率
-        * offset表是mmap访问模式，由于等长，直接将 idx 转换为 ptr + 16*idx
+        * offset表是mmap访问模式，由于等长，直接将 idx 转换为 ptr + 8*idx
         * 不同位宽表示的数值范围
         ```
+        u12 → 2^12 - 1 （4095）
         u16 → 2^16 - 1 （65535）
         u32 → 2^32 - 1 （4.29e9）
-        u64 → 2^64 - 1 （1.84e19）
         ```
         * 不同位宽表示的数据大小
         ```
         u16 → 64 KiB
+        u20 → 1 MiB
         u32 → 4 GiB
-        u64 → 16 EiB
         ```
     ```
     outside idx (global)
