@@ -118,7 +118,7 @@ dataset/
     2. 修改：追加一个record，并修改offset项
     3. 删除：删除offset项(将目标项替换为最后一项)，length减一（越界访问属于UB行为）
 
-2. 读任务：用一个indices（索引数组），从原数组里访问指定位置的元素(gather)
+2. 读任务：用一个indices（索引数组），从原数组里访问指定位置的元素(gather),对于python而言是一个NumPy Array
     1. 对于无压缩的数据，将直接返回文件内地址实现zero-copy
 
     读取流程
