@@ -14,22 +14,14 @@ a high-performance sampler implemented in Zig
 ## zrecord
 基于Zig实现一个并发友好、实现更简单、单机性能更优的 record 存储系统
 
-1. ZRecord基于 record 思想设计，我们不假定record间存在顺序关系，对于顺序语义应在record内部表达或建立timestamp
+1. ZRecord基于 record 思想设计，我们不假定record间存在顺序关系
 2. record是相互独立的逻辑记录，仅在 Python 侧提供与 NumPy 兼容的 array 接口投影
 3. zrecord是无类型的，数据只是Bytes，类型解析由上层完成
 4. chunk只是存储管理单元，提高并发性能，不具备语义
 
 ### 存储形式
-1. ZRecord 仅包含一个多流数据集，长度为 N（N 个 record）
+1. ZRecord 仅包含一个数据集，长度为 N（N 个 record）
     * 索引空间为 [0, N)，所有索引与切块语义等价于 gather 操作
-    * 多流，类似 `set['A'], set['B']`, 但必须等长
-    ```
-    Dataset:
-    record_id = 0..N-1
-
-    Field A: bytes / tensor / audio / text
-    Field B: bytes / label / meta
-    ```
 2. 为降低存储体积，支持粒度为record级的透明压缩，以下是可选的压缩方法
 ```
 | 方法  | 算法    |
@@ -65,15 +57,14 @@ a high-performance sampler implemented in Zig
     ```
 4. ZRecord的存储是元数据+分块的格式
     1. 元数据
-        * meta.json：描述全局元数据，包括全局参数与Field参数
+        * meta.json：描述全局元数据
         ```
         {
         "length": 65536,
-        "chunks": { "num": 12, "size": 8192, "unfull": {[8, write_pos, record_count], ... } },
-        "fields": [ {"name": "A", "dtype": "f32", "compress": "flate"}, {"name": "B", "dtype": "i32", "compress": "raw"} ]
+        "chunk_num": 12
         }
         ```
-        * Field_offset.zr：索引表
+        * offset.zr：索引表
         ```
         0 0 255
         0 256 511
@@ -86,8 +77,7 @@ a high-performance sampler implemented in Zig
 ```
 dataset
   ├── meta.json
-  ├── A.offset
-  ├── B.offset
+  ├── offset.zr
   ├── chunk
   │    ├── 0.zr
   └──└── 1.zr
@@ -105,9 +95,7 @@ dataset
     * gc_task：垃圾回收任务队列，压入batch，等待cleaner弹出
 
 2. 工作线程：执行具体任务的工作线程
-    * writer：线程池执行写任务，但每个线程固定对应一个chunk
-        * writer只会向自己的chunk写入（写满时新建chunk提交给执行器完成）
-        * num_writer推荐：1-4
+    * writer：单线程池执行写任务，固定对应末尾chunk
     * reader：线程池执行读任务
         * num_reader推荐：8-32
     * cleaner：线程池执行垃圾回收任务
@@ -116,20 +104,18 @@ dataset
 3. handle：
     1. mmap：维护全局offset、chunk文件的handle
         * 初始化阶段注册,关闭前释放
-        * 对于full的chunk,使用mmap+close（只读），对于unfull的chunk使用mmap（读写）。一旦写满（writer提交），新建chunk并返回给writer,原mmap close。（避免过多占用fd）
-        * 对于chunk/offset文件，动态完成分块增长，基于ftruncate+mremap实现
-            * 扩容offset表，一次增长 1M项（16MiB）
-            * 扩容chunk文件，一次增长 1GiB
+        * 仅对于尾chunk使用mmap（读写），其余使用使用mmap+close（只读），一旦写满（writer提交），新建chunk并返回给writer,原mmap close。（避免过多占用fd）
+        * 新建chunk：基于ftruncate+mmap实现，一次申请4GiB
+        * 对于offset文件，动态完成分块增长，基于ftruncate+mremap实现扩容，一次增长 1M项（16MiB）
     2. batch：维护每次返回batch的handle,也就是[ptr, logical_length]中ptr的合规性
         * 工作线程完成后注册
         * 必须调用函数来手动释放，释放时batch压入GC队列
 
 #### 在线任务
 
-1. 写任务：写入只允许chunk-level append-only,其余操作基于offset重定向，缺失的field构造为全为0的项（physical_length为0代表无）
+1. 写任务：写入只允许append-only,其余操作基于offset重定向
     1. 追加：在chunk当前写入位置追加一个record，offset表更新length+1条目，全局长度增加
-        * 写满：写入完成时检查，如果record_count达到chunk_size, 新建chunk
-        * 写入越界：捕捉错误，并对chunk扩容
+        * 写满：写入完成时检查，如果chunk大小达到4G, 新建chunk
         * offset[ length+1 ]不存在：捕捉错误，并对offset扩容
     2. 修改：追加一个record，并修改offset项
     3. 删除：删除offset项(将目标项替换为最后一项)，length减一（越界访问属于UB行为）
@@ -157,7 +143,7 @@ dataset
 
 1. 重平衡（Rebalance）：zrecord经过大量写操作后，会出现chunk访问不平衡,通过重平衡来恢复chunk的可访问性
     * 实现：根据offset进行重写入，并在完成后替换
-    * Rebalance只允许手动运行，确保用户知情，提供一个利用率（sum(length)/sum(chunk_size*num_chunks)）
+    * Rebalance只允许手动运行，确保用户知情，提供一个利用率（sum(length)/sum(4GiB*chunk_num)）
 
 ### 分布式扩展
 
