@@ -14,10 +14,8 @@ a high-performance sampler implemented in Zig
 ## zrecord
 基于Zig实现一个并发友好、实现更简单、单机性能更优的 record 存储系统
 
-1. ZRecord基于 record 思想设计，我们不假定record间存在顺序关系
-2. record是相互独立的逻辑记录，仅在 Python 侧提供与 NumPy 兼容的 array 接口投影
-3. zrecord是无类型的，数据只是Bytes，类型解析由上层完成
-4. chunk只是存储管理单元，提高并发性能，不具备语义
+1. zrecord默认record相互独立，不假定record间存在顺序关系
+2. zrecord向Python 侧返回 NumPy Array，但类型解析由Numpy完成
 
 ### 存储形式
 1. ZRecord 仅包含一个数据集，长度为 N（N 个 record）
