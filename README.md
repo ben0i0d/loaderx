@@ -58,7 +58,7 @@ a high-performance sampler implemented in Zig
     1. 元数据（meta.zr）：包括header与offset两部分
         * header：全局状态数据
         ```
-        const Header = struct { length: u24, chunk_num: u12, compress: enum(u8) { raw = 0, flate = 1 }, _pad: u20 };
+        const Header = struct { length: u24, chunk_num: u12, compress: enum(u8) { raw = 0, flate = 1 }, pad: u20 };
         ```
         * offset：索引表
         ```
@@ -101,7 +101,7 @@ dataset/
     2. batch：维护每次返回batch的handle,也就是[ptr, logical_length]中ptr的合规性
         * 工作线程完成后注册
         * 必须调用函数来手动释放，释放时batch压入GC队列
-    3. sync: 定期向磁盘写入meta.json | offset来同步数据
+    3. sync: 定期向磁盘写入meta.zr来同步数据
 
 #### 在线任务
 

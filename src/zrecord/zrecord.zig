@@ -1,9 +1,22 @@
 const std = @import("std");
 
-pub const Zrecord = struct {
-    const Header = struct { length: u24, chunk_num: u12, compress: enum(u8) { raw = 0, flate = 1 }, _pad: u20 };
-    const Offset = struct { chunk_id: u12, offset: u32, length: u20 };
+const Header = struct {
+    length: u24,
+    chunk_num: u12,
+    compress: enum(u8) {
+        raw = 0,
+        flate = 1,
+    },
+    pad: u20,
+};
 
+const Offset = struct {
+    chunk_id: u12,
+    offset: u32,
+    length: u20,
+};
+
+pub const Zrecord = struct {
     allocator: std.mem.Allocator,
     data_dir: []const u8,
 
