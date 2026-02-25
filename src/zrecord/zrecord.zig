@@ -12,14 +12,8 @@ pub const Zrecord = struct {
 
     pub fn Init(allocator: std.mem.Allocator, data_dir: []const u8) !Zrecord {
         // Dir prepare
-        var buffer: [128]u8 = undefined;
         const cwd = std.fs.cwd();
         try cwd.makeDir(data_dir);
-
-        // File prepare
-        const meta = try std.fmt.bufPrint(&buffer, "{s}/meta.json", .{data_dir});
-        const file = try cwd.createFile(meta, .{});
-        defer file.close();
 
         // create meta
         return Zrecord{

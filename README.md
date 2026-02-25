@@ -100,21 +100,20 @@ dataset/
         * num_cleaner推荐：2-4
 
 3. handle：
-    1. mmap：维护全局offset、chunk文件的handle
+    1. mmap：维护全局chunk文件的handle
         * 初始化阶段注册,关闭前释放
-        * 仅对于尾chunk使用mmap（读写），其余使用使用mmap+close（只读），一旦写满（writer提交），新建chunk并返回给writer,原mmap close。（避免过多占用fd）
         * 新建chunk：基于ftruncate+mmap实现，一次申请4GiB
-        * 对于offset文件，动态完成分块增长，基于ftruncate+mremap实现扩容，一次增长 1M项（16MiB）
+        * 仅对于尾chunk使用mmap（读写），其余使用使用mmap+close（只读），一旦写满（writer提交），新建chunk并返回给writer,原mmap close。（避免过多占用fd）
     2. batch：维护每次返回batch的handle,也就是[ptr, logical_length]中ptr的合规性
         * 工作线程完成后注册
         * 必须调用函数来手动释放，释放时batch压入GC队列
+    3. sync: 定期向磁盘写入meta.json | offset来同步数据
 
 #### 在线任务
 
 1. 写任务：写入只允许append-only,其余操作基于offset重定向
     1. 追加：在chunk当前写入位置追加一个record，offset表更新length+1条目，全局长度增加
         * 写满：写入完成时检查，如果chunk大小达到4G, 新建chunk
-        * offset[ length+1 ]不存在：捕捉错误，并对offset扩容
     2. 修改：追加一个record，并修改offset项
     3. 删除：删除offset项(将目标项替换为最后一项)，length减一（越界访问属于UB行为）
 
