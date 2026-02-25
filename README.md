@@ -55,28 +55,22 @@ a high-performance sampler implemented in Zig
     chunk_id, offset, physical_length
     ```
 4. ZRecord的存储是元数据+分块的格式
-    1. 元数据
-        * meta.json：描述全局元数据
+    1. 元数据（meta.zr）：包括header与offset两部分
+        * header：全局状态数据
         ```
-        {
-        "length": 65536,
-        "chunk_num": 12
-        }
+        const Header = struct { length: u24, chunk_num: u12, compress: enum(u8) { raw = 0, flate = 1 }, _pad: u20 };
         ```
-        * offset.zr：索引表
+        * offset：索引表
         ```
-        0 0 255
-        0 256 511
-        ...
+        const Offset = struct { chunk_id: u12, offset: u32, length: u20 };
+        offset: std.ArrayList(Offset)
         ```
-    2. 分块数据
-        * x.zr: 分块的chunk数据,chunk不区分数据所属
+    2. 分块数据（x.zr）：分块的chunk数据
 
 存储格式如下
 ```
 dataset/
-  ├── meta.json
-  ├── offset.zr
+  ├── meta.zr
   ├── 0.zr
   └── 1.zr
 ```

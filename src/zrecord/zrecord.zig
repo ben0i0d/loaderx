@@ -1,16 +1,16 @@
 const std = @import("std");
 
 pub const Zrecord = struct {
-    const Meta = struct { length: u24, chunk_num: u12 };
+    const Header = struct { length: u24, chunk_num: u12, compress: enum(u8) { raw = 0, flate = 1 }, _pad: u20 };
     const Offset = struct { chunk_id: u12, offset: u32, length: u20 };
 
     allocator: std.mem.Allocator,
     data_dir: []const u8,
 
-    meta: Meta,
+    header: Header,
     offset: std.ArrayList(Offset),
 
-    pub fn Init(allocator: std.mem.Allocator, data_dir: []const u8) !Zrecord {
+    pub fn Init(allocator: std.mem.Allocator, data_dir: []const u8, compress: u8) !Zrecord {
         // Dir prepare
         const cwd = std.fs.cwd();
         try cwd.makeDir(data_dir);
@@ -18,9 +18,11 @@ pub const Zrecord = struct {
         // create meta
         return Zrecord{
             .data_dir = data_dir,
-            .meta = .{
+            .header = .{
                 .length = 0,
                 .chunk_num = 0,
+                .compress = @enumFromInt(compress),
+                .pad = 0,
             },
             .offset = std.ArrayList(Offset).init(allocator),
         };
@@ -34,11 +36,11 @@ pub const Zrecord = struct {
         const file = try cwd.createFile(chunk, .{});
         defer file.close();
 
-        self.meta.chunk_num += 1;
+        self.header.chunk_num += 1;
     }
 };
 
 pub fn main() !void {
-    try InitDataset("test");
-    try AddChunk("test", 0);
+    try Zrecord.Init("test");
+    try Zrecord.AddChunk("test", 0);
 }
