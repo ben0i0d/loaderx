@@ -89,9 +89,8 @@ dataset/
 
 ### 分布式扩展
 **该部分暂时不会实现，仅提前架构**
-1. 分布式下，增加一个更高的层次-cluster
-2. 机器变为node，并持有一个shard,包含若干个chunk
-3. 添加一个indirection表，将全局路径映射到具体node，索引路径变为
+1. 分布式下增加了cluster层, node变成一个shard,包含若干个chunk
+2. 添加一个indirection表，将全局路径映射到具体node，索引路径变为
 ```
 outside idx (global)
 ↓

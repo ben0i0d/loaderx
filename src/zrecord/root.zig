@@ -29,8 +29,6 @@ const ReadTask = struct {
     offset: Offset,
 };
 
-const GcTask = []pyoz.ByteArray;
-
 pub const Zrecord = struct {
     allocator: std.mem.Allocator,
     data_dir: []const u8,
@@ -39,6 +37,10 @@ pub const Zrecord = struct {
     offset: std.ArrayList(Offset),
     chunk: std.ArrayList([]u8),
     batch: std.ArrayList([]pyoz.ByteArray),
+
+    write_queue: std.Io.Queue(WriteTask),
+    read_queue: std.Io.Queue(ReadTask),
+    gc_queue: std.Io.Queue([]pyoz.ByteArray),
 
     pub fn Init(allocator: std.mem.Allocator, data_dir: []const u8, compress: u8, batch_size: u32) !Zrecord {
         // Dir prepare
