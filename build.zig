@@ -26,7 +26,7 @@ pub fn build(b: *std.Build) void {
         }),
     });
     // Link Python
-    libsampler.linkSystemLibrary(pythonversion);
+    libsampler.root_module.linkSystemLibrary(pythonversion, .{});
 
     b.installArtifact(libsampler);
 }
