@@ -1,4 +1,5 @@
 const std = @import("std");
+const pyoz = @import("PyOZ");
 
 const Header = struct {
     length: u24,
@@ -23,6 +24,7 @@ pub const Zrecord = struct {
     header: Header,
     offset: std.ArrayList(Offset),
     chunk: std.ArrayList([]u8),
+    batch: std.ArrayList(pyoz.ByteArray),
 
     pub fn Init(allocator: std.mem.Allocator, data_dir: []const u8, compress: u8) !Zrecord {
         // Dir prepare
@@ -40,6 +42,7 @@ pub const Zrecord = struct {
             },
             .offset = std.ArrayList(Offset).init(allocator),
             .chunk = std.ArrayList([]u8).init(allocator),
+            .batch = std.ArrayList(pyoz.ByteArray).init(allocator),
         };
     }
 

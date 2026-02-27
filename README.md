@@ -26,35 +26,6 @@ a high-performance sampler implemented in Zig
 | flate | Deflate | 
 ```
 
-### 运行时格式
-ZRecord运行时以内存状态为主，定期持久化保存
-```
-const Header = struct {
-    length: u24,
-    chunk_num: u12,
-    compress: enum(u8) {
-        raw = 0,
-        flate = 1,
-    },
-    pad: u20,
-};
-
-const Offset = struct {
-    chunk_id: u12,
-    offset: u32,
-    physical_length: u20,
-};
-
-pub const Zrecord = struct {
-    allocator: std.mem.Allocator,
-    data_dir: []const u8,
-
-    header: Header,
-    offset: std.ArrayList(Offset),
-    chunk: std.ArrayList([]u8),
-};
-```
-
 ### 持久化格式
 ZRecord的存储是元数据+分块数据的格式，存储格式如下
 ```
@@ -88,31 +59,28 @@ dataset/
     * chunk_id表示具体chunk | offset表示具体chunk内的偏移 | physical_length表示record数据大小 | 隐含：length_max = 16777216（2^24）
 
 ### 执行器
-负责维护任务队列，工作线程，handle
+负责维护任务队列，并安排工作线程
 
 1. 任务队列：
     * write_task：写任务队列，压入[ops, record]，等待writer弹出
     * read_task：读任务队列，预分配batch并压入[batch, pos, chunk_id, offset, physical_length]，等待reader弹出
         * batch: 具体读取请求下创建的与indices等长的二元组
         * pos：在batch中的位置，保证等序返回
-    * gc_task：垃圾回收任务队列，压入batch，等待cleaner弹出
+    * gc_task：垃圾回收任务队列，压入batch列表的idx，等待cleaner弹出
 
 2. 工作线程：执行具体任务的工作线程
-    * writer：单线程池执行写任务，固定对应末尾chunk
+    * writer：单线程执行写任务，固定对应末尾chunk
     * reader：线程池执行读任务
         * num_reader推荐：8-32
-    * cleaner：线程池执行垃圾回收任务
-        * num_cleaner推荐：2-4
+    * cleaner：单线程执行垃圾回收任务
+        * 垃圾回收方式与删除record一致，swap last + length--
 
-3. handle：
-    1. mmap：维护全局chunk文件的handle
-        * 初始化阶段注册,关闭前释放
-        * 新建chunk：基于ftruncate+mmap实现，一次申请4GiB
-        * 仅对于尾chunk使用mmap（读写），其余使用使用mmap+close（只读），一旦写满（writer提交），新建chunk并返回给writer,原mmap close。（避免过多占用fd）
-    2. batch：维护每次返回batch的handle,也就是[ptr, logical_length]中ptr的合规性
-        * 工作线程完成后注册
-        * 必须调用函数来手动释放，释放时batch压入GC队列
-    3. sync: 定期向磁盘写入meta.zr来同步数据
+3. mmap：维护chunk文件的handle
+    * 初始化阶段注册,关闭前释放
+    * 新建chunk：基于ftruncate+mmap实现，一次申请4GiB
+    * 仅对于尾chunk使用mmap（读写），其余使用使用mmap+close（只读），一旦写满（writer提交），新建chunk并返回给writer,原mmap close。（避免过多占用fd）
+
+4. sync: 定期向磁盘写入meta.zr来同步数据
 
 #### 在线任务
 
@@ -133,7 +101,7 @@ dataset/
     ↓field_offset
     [batch, pos, chunk_id, offset, physical_length]
     ↓
-    [ptr, logical_length]
+    pyoz.ByteArray
     ```
 
 3. 垃圾回收任务：cleaner从GC队列中释放对应batch
