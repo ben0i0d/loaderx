@@ -47,12 +47,6 @@ dataset/
 
 2. offset（[]8B）：通过索引表将索引指向实际存储地址来支持高效随机访问，条目是三元组 [chunk_id : u12, offset : u32, physical_length : u20]，长度为N。
     ```
-    idx (global)
-    ↓
-    ↓offset[idx]
-    ↓
-    chunk_id, offset, physical_length
-
     const Offset = struct { chunk_id: u12, offset: u32, physical_length: u20 };
     offset: std.ArrayList(Offset)
     ```
@@ -62,18 +56,29 @@ dataset/
 负责维护任务队列，并安排工作线程
 
 1. 任务队列：
-    * write_task：写任务队列，压入[ops, record]，等待writer弹出
-    * read_task：读任务队列，预分配batch并压入[batch, pos, chunk_id, offset, physical_length]，等待reader弹出
-        * batch: 具体读取请求下创建的与indices等长的二元组
-        * pos：在batch中的位置，保证等序返回
-    * gc_task：垃圾回收任务队列，压入batch列表的idx，等待cleaner弹出
+    * write_quene（写任务队列）：压入写任务，等待writer弹出，写入只允许append-only,其余操作基于offset重定向
+        1. 追加：在chunk当前写入位置追加一个record，offset表更新length+1条目，全局长度增加
+            * 写满：写入完成时检查，如果chunk大小达到4G, 新建chunk
+        2. 修改：追加一个record，并修改offset项
+        3. 删除：删除offset项(将目标项替换为最后一项)，length减一（越界访问属于UB行为）
+    * read_quene（读任务队列）：预分配batch并压入读任务，等待reader弹出
+        * 执行顺序：预分配batch → indices（索引数组）解包 → 压入item级读取任务 → reader读取指定位置 → 按照pos（在batch中的位置）组合pyoz.ByteArray
+        * 为了并发友好，将batch级解包为item分别压入
+        * 由于对python侧保持原地，不再要求zero-copy
+    ```
+    [idx]
+    ↓
+    [batch, pos, offset[idx]]
+    ↓
+    pyoz.ByteArray
+    ```
+    * gc_quene（垃圾回收任务队列）：压入待释放batch地址，等待cleaner弹出
 
 2. 工作线程：执行具体任务的工作线程
     * writer：单线程执行写任务，固定对应末尾chunk
     * reader：线程池执行读任务
         * num_reader推荐：core  ≤ num_reader ≤ 2*core
     * cleaner：单线程执行垃圾回收任务
-        * 垃圾回收方式与删除record一致，swap last + length--
 
 3. mmap：维护chunk文件的handle
     * 初始化阶段注册,关闭前释放
@@ -82,40 +87,11 @@ dataset/
 
 4. sync: 定期向磁盘写入meta.zr来同步数据
 
-#### 在线任务
-
-1. 写任务：写入只允许append-only,其余操作基于offset重定向
-    1. 追加：在chunk当前写入位置追加一个record，offset表更新length+1条目，全局长度增加
-        * 写满：写入完成时检查，如果chunk大小达到4G, 新建chunk
-    2. 修改：追加一个record，并修改offset项
-    3. 删除：删除offset项(将目标项替换为最后一项)，length减一（越界访问属于UB行为）
-
-2. 读任务：用一个indices（索引数组），从原数组里访问指定位置的元素(gather),对于python而言是一个NumPy Array
-    1. 对于无压缩的数据，将直接返回文件内地址实现zero-copy
-
-    读取流程
-    ```
-    [idx]
-    ↓
-    [batch, pos, idx]
-    ↓offset
-    [batch, pos, chunk_id, offset, physical_length]
-    ↓
-    pyoz.ByteArray
-    ```
-
-3. 垃圾回收任务：cleaner从GC队列中释放对应batch
-    1. 对于无压缩的数据，不释放内存，只释放 batch 本身
-    2. 对于有压缩的数据，释放内存
-    3. GC后访问ptr属于UB行为
-
 ### 分布式扩展
-
-**该部分暂时不会实现，只是提前架构**
-
-1. 分布式下，我们会得到一个更高的层次-cluster,单机将变为cluster内的node
-2. node持有一个shard,包含若干个chunk
-3. 添加一个indirection表，将全局路径映射到具体node的表，indirection也可以使用hash实现，从而无锁，索引路径变为
+**该部分暂时不会实现，仅提前架构**
+1. 分布式下，增加一个更高的层次-cluster
+2. 机器变为node，并持有一个shard,包含若干个chunk
+3. 添加一个indirection表，将全局路径映射到具体node，索引路径变为
 ```
 outside idx (global)
 ↓

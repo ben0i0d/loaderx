@@ -17,6 +17,20 @@ const Offset = struct {
     physical_length: u20,
 };
 
+const WriteTask = union(enum) {
+    append: pyoz.ByteArray,
+    modify: struct { index: u32, record: pyoz.ByteArray },
+    delete: u32,
+};
+
+const ReadTask = struct {
+    batch: []pyoz.ByteArray,
+    pos: u32,
+    offset: Offset,
+};
+
+const GcTask = []pyoz.ByteArray;
+
 pub const Zrecord = struct {
     allocator: std.mem.Allocator,
     data_dir: []const u8,
@@ -24,11 +38,9 @@ pub const Zrecord = struct {
     header: Header,
     offset: std.ArrayList(Offset),
     chunk: std.ArrayList([]u8),
-    batch: std.ArrayList(pyoz.ByteArray),
+    batch: std.ArrayList([]pyoz.ByteArray),
 
-    batch_size: u64,
-
-    pub fn Init(allocator: std.mem.Allocator, data_dir: []const u8, compress: u8) !Zrecord {
+    pub fn Init(allocator: std.mem.Allocator, data_dir: []const u8, compress: u8, batch_size: u32) !Zrecord {
         // Dir prepare
         const cwd = std.fs.cwd();
         try cwd.makeDir(data_dir);
@@ -46,7 +58,7 @@ pub const Zrecord = struct {
             },
             .offset = std.ArrayList(Offset).init(allocator),
             .chunk = std.ArrayList([]u8).init(allocator),
-            .batch = std.ArrayList(pyoz.ByteArray).init(allocator),
+            .batch = std.ArrayList([batch_size]pyoz.ByteArray).init(allocator),
 
             .batch_size = 0,
         };
