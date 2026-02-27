@@ -13,7 +13,7 @@ const Header = struct {
 const Offset = struct {
     chunk_id: u12,
     offset: u32,
-    length: u20,
+    physical_length: u20,
 };
 
 pub const Zrecord = struct {
@@ -22,6 +22,7 @@ pub const Zrecord = struct {
 
     header: Header,
     offset: std.ArrayList(Offset),
+    chunk: std.ArrayList([]u8),
 
     pub fn Init(allocator: std.mem.Allocator, data_dir: []const u8, compress: u8) !Zrecord {
         // Dir prepare
@@ -38,6 +39,7 @@ pub const Zrecord = struct {
                 .pad = 0,
             },
             .offset = std.ArrayList(Offset).init(allocator),
+            .chunk = std.ArrayList([]u8).init(allocator),
         };
     }
 

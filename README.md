@@ -12,69 +12,82 @@ a high-performance sampler implemented in Zig
     * Global random: a set of samples is drawn randomly from the entire index space.
 
 ## zrecord
-基于Zig实现一个并发友好、实现更简单、单机性能更优的 record 存储系统
+基于Zig实现一个并发友好、实现简单、性能更优的 record 存储系统
 
 1. zrecord默认record相互独立，不假定record间存在顺序关系
 2. zrecord向Python 侧返回 NumPy Array，但类型解析由Numpy完成
-
-### 存储形式
-1. ZRecord 仅包含一个数据集，长度为 N（N 个 record）
-    * 索引空间为 [0, N)，所有索引与切块语义等价于 gather 操作
-2. 为降低存储体积，支持粒度为record级的透明压缩，以下是可选的压缩方法
+3. zrecord仅包含一个数据集，长度为 N（N 个 record），所有索引与切块语义等价于 gather 操作
+4. zrecord是数据运行时，并不是数据存储引擎，因此将以内存数据为主状态，仅定期持久化到文件系统中
+5. 为降低存储体积，支持record级透明压缩，以下是可选的压缩方法
 ```
 | 方法  | 算法    |
 | ----- | ------- |
 | raw   | 无压缩  | 
 | flate | Deflate | 
 ```
-3. 通过offset支持高效随机访问
-    * offset表项是一个三元组 [[chunk_id : u12, offset : u32, physical_length : u20], ...]，长度为N。将外部索引空间（outside[0, N]）指向一个实际存储地址
-        * chunk_id为u12，表示具体chunk | offset为u32, 表示具体chunk内的偏移 | physical_length为u20，表示record数据大小
-        * 隐含上限：length_max = 16777216（2^24）
-        * offset表每项的字节大小最好为 8 的整数倍，提升对齐和缓存效率
-        * offset表是mmap访问模式，由于等长，直接将 idx 转换为 ptr + 8*idx
-        * 不同位宽表示的数值范围
-        ```
-        u12 → 2^12 - 1 （4095）
-        u16 → 2^16 - 1 （65535）
-        u32 → 2^32 - 1 （4.29e9）
-        ```
-        * 不同位宽表示的数据大小
-        ```
-        u16 → 64 KiB
-        u20 → 1 MiB
-        u32 → 4 GiB
-        ```
-    ```
-    outside idx (global)
-    ↓
-    ↓offset[idx]
-    ↓
-    chunk_id, offset, physical_length
-    ```
-4. ZRecord的存储是元数据+分块的格式
-    1. 元数据（meta.zr）：包括header与offset两部分
-        * header：全局状态数据
-        ```
-        const Header = struct { length: u24, chunk_num: u12, compress: enum(u8) { raw = 0, flate = 1 }, pad: u20 };
-        ```
-        * offset：索引表
-        ```
-        const Offset = struct { chunk_id: u12, offset: u32, length: u20 };
-        offset: std.ArrayList(Offset)
-        ```
-    2. 分块数据（x.zr）：分块的chunk数据
 
-存储格式如下
+### 运行时格式
+ZRecord运行时以内存状态为主，定期持久化保存
+```
+const Header = struct {
+    length: u24,
+    chunk_num: u12,
+    compress: enum(u8) {
+        raw = 0,
+        flate = 1,
+    },
+    pad: u20,
+};
+
+const Offset = struct {
+    chunk_id: u12,
+    offset: u32,
+    physical_length: u20,
+};
+
+pub const Zrecord = struct {
+    allocator: std.mem.Allocator,
+    data_dir: []const u8,
+
+    header: Header,
+    offset: std.ArrayList(Offset),
+    chunk: std.ArrayList([]u8),
+};
+```
+
+### 持久化格式
+ZRecord的存储是元数据+分块数据的格式，存储格式如下
 ```
 dataset/
   ├── meta.zr
   ├── 0.zr
   └── 1.zr
 ```
+#### 分块数据（x.zr）
+分块的chunk数据
+
+#### 元数据（meta.zr）
+包括header与offset两部分
+
+1. header（8B）：全局状态数据
+    ```
+    const Header = struct { length: u24, chunk_num: u12, compress: enum(u8) { raw = 0, flate = 1 }, pad: u20 };
+    ```
+
+2. offset（[]8B）：通过索引表将索引指向实际存储地址来支持高效随机访问，条目是三元组 [chunk_id : u12, offset : u32, physical_length : u20]，长度为N。
+    ```
+    idx (global)
+    ↓
+    ↓offset[idx]
+    ↓
+    chunk_id, offset, physical_length
+
+    const Offset = struct { chunk_id: u12, offset: u32, physical_length: u20 };
+    offset: std.ArrayList(Offset)
+    ```
+    * chunk_id表示具体chunk | offset表示具体chunk内的偏移 | physical_length表示record数据大小 | 隐含：length_max = 16777216（2^24）
 
 ### 执行器
-
 负责维护任务队列，工作线程，handle
 
 1. 任务队列：
@@ -127,12 +140,6 @@ dataset/
     1. 对于无压缩的数据，不释放内存，只释放 batch 本身
     2. 对于有压缩的数据，释放内存
     3. GC后访问ptr属于UB行为
-
-#### 离线任务
-
-1. 重平衡（Rebalance）：zrecord经过大量写操作后，会出现chunk访问不平衡,通过重平衡来恢复chunk的可访问性
-    * 实现：根据offset进行重写入，并在完成后替换
-    * Rebalance只允许手动运行，确保用户知情，提供一个利用率（sum(length)/sum(4GiB*chunk_num)）
 
 ### 分布式扩展
 
