@@ -71,7 +71,7 @@ dataset/
 2. 工作线程：执行具体任务的工作线程
     * writer：单线程执行写任务，固定对应末尾chunk
     * reader：线程池执行读任务
-        * num_reader推荐：8-32
+        * num_reader推荐：core  ≤ num_reader ≤ 2*core
     * cleaner：单线程执行垃圾回收任务
         * 垃圾回收方式与删除record一致，swap last + length--
 
@@ -98,7 +98,7 @@ dataset/
     [idx]
     ↓
     [batch, pos, idx]
-    ↓field_offset
+    ↓offset
     [batch, pos, chunk_id, offset, physical_length]
     ↓
     pyoz.ByteArray

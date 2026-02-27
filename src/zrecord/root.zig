@@ -26,6 +26,8 @@ pub const Zrecord = struct {
     chunk: std.ArrayList([]u8),
     batch: std.ArrayList(pyoz.ByteArray),
 
+    batch_size: u64,
+
     pub fn Init(allocator: std.mem.Allocator, data_dir: []const u8, compress: u8) !Zrecord {
         // Dir prepare
         const cwd = std.fs.cwd();
@@ -33,7 +35,9 @@ pub const Zrecord = struct {
 
         // create meta
         return Zrecord{
+            .allocator = allocator,
             .data_dir = data_dir,
+
             .header = .{
                 .length = 0,
                 .chunk_num = 0,
@@ -43,6 +47,8 @@ pub const Zrecord = struct {
             .offset = std.ArrayList(Offset).init(allocator),
             .chunk = std.ArrayList([]u8).init(allocator),
             .batch = std.ArrayList(pyoz.ByteArray).init(allocator),
+
+            .batch_size = 0,
         };
     }
 
