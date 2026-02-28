@@ -61,22 +61,15 @@ dataset/
             * 写满：写入完成时检查，如果chunk大小达到4G, 新建chunk
         2. 修改：追加一个record，并修改offset项
         3. 删除：删除offset项(将目标项替换为最后一项)，length减一（越界访问属于UB行为）
-    * read_quene（读任务队列）：预分配batch并压入读任务，等待reader弹出
+    * read_quene（读任务队列）：预分配batch并压入读任务，等待reader弹出 | `[idx] → [batch, pos, offset[idx]] → pyoz.ByteArray`
         * 执行顺序：预分配batch → indices（索引数组）解包 → 压入item级读取任务 → reader读取指定位置 → 按照pos（在batch中的位置）组合pyoz.ByteArray
         * 为了并发友好，将batch级解包为item分别压入
         * 由于对python侧保持原地，不再要求zero-copy
-    ```
-    [idx]
-    ↓
-    [batch, pos, offset[idx]]
-    ↓
-    pyoz.ByteArray
-    ```
-    * gc_quene（垃圾回收任务队列）：压入待释放batch地址，等待cleaner弹出
+    * gc_quene（垃圾回收任务队列）：压入待释放batch地址，等待maintainer弹出
 
 2. 工作线程：执行具体任务的工作线程
     * writer：单线程执行写任务，固定对应末尾chunk
-    * reader：线程池执行读任务
+    * reader：多线程执行读任务
         * num_reader推荐：core  ≤ num_reader ≤ 2*core
     * maintainer：单线程执行垃圾回收/持久化任务（定期向磁盘写入meta.zr来同步数据）
 
@@ -89,17 +82,7 @@ dataset/
 **该部分暂时不会实现，仅提前架构**
 1. 分布式下增加了cluster层, node变成一个shard,包含若干个chunk
 2. 添加一个indirection表，将全局路径映射到具体node，索引路径变为
-```
-outside idx (global)
-↓
-↓indirection[idx]
-↓
-node, idx
-↓
-↓offset[idx]
-↓
-chunk_id, offset, physical_length
-```
+`idx → indirection[idx] = node, idx → offset[idx] = chunk_id, offset, physical_length`
 
 ## Convert a NumPy tensor to Array_record
 
