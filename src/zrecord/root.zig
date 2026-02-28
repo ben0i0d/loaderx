@@ -42,6 +42,10 @@ pub const Zrecord = struct {
     read_queue: std.Io.Queue(ReadTask),
     gc_queue: std.Io.Queue([]pyoz.ByteArray),
 
+    writer: std.Thread,
+    reader: []std.Thread,
+    maintainer: std.Thread,
+
     pub fn Init(allocator: std.mem.Allocator, data_dir: []const u8, compress: u8, batch_size: u32) !Zrecord {
         // Dir prepare
         const cwd = std.fs.cwd();

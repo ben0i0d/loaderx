@@ -1,21 +1,21 @@
-# loaderx
+# Loaderx
 A record-based data runtime, focused on delivering extreme throughput and low latency
 
 **Only Python3.13_Linux_amd64**
 
 ## Sampler
-a high-performance sampler implemented in Zig
-### Index Generator
+Index Generator: a high-performance sampler implemented in Zig
+
 1. Sequential generation: indices are produced by traversing the index space in order.
     * Sliding traversal: indices are obtained using a fixed-size sliding window. Note that in this case, the index space is treated as a circular queue to avoid truncation at the tail.
 2. Random generation: indices are sampled randomly from the index space.
     * Global random: a set of samples is drawn randomly from the entire index space.
 
-## zrecord
+## Zrecord
 基于Zig实现一个并发友好、实现简单、性能更优的 record 存储系统
 
 1. zrecord默认record相互独立，不假定record间存在顺序关系
-2. zrecord向Python 侧返回 NumPy Array，但类型解析由Numpy完成
+2. zrecord向Python 侧返回ByteArray，但类型解析由Numpy完成
 3. zrecord仅包含一个数据集，长度为 N（N 个 record），所有索引与切块语义等价于 gather 操作
 4. zrecord是数据运行时，并不是数据存储引擎，因此将以内存数据为主状态，仅定期持久化到文件系统中
 5. 为降低存储体积，支持record级透明压缩，以下是可选的压缩方法
@@ -78,14 +78,12 @@ dataset/
     * writer：单线程执行写任务，固定对应末尾chunk
     * reader：线程池执行读任务
         * num_reader推荐：core  ≤ num_reader ≤ 2*core
-    * cleaner：单线程执行垃圾回收任务
+    * maintainer：单线程执行垃圾回收/持久化任务（定期向磁盘写入meta.zr来同步数据）
 
 3. mmap：维护chunk文件的handle
     * 初始化阶段注册,关闭前释放
     * 新建chunk：基于ftruncate+mmap实现，一次申请4GiB
     * 仅对于尾chunk使用mmap（读写），其余使用使用mmap+close（只读），一旦写满（writer提交），新建chunk并返回给writer,原mmap close。（避免过多占用fd）
-
-4. sync: 定期向磁盘写入meta.zr来同步数据
 
 ### 分布式扩展
 **该部分暂时不会实现，仅提前架构**
